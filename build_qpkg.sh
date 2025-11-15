@@ -33,6 +33,30 @@ check_qdk() {
 copy_driver() {
     echo "[2/5] Copying driver to QPKG source..."
 
+    # Validate QPKG source directory exists
+    if [ ! -d "${QPKG_SOURCE}" ]; then
+        echo "ERROR: QPKG source directory not found: ${QPKG_SOURCE}"
+        echo "Please ensure the qpkg directory is properly mounted"
+        echo "Expected directory structure:"
+        echo "  ${QPKG_SOURCE}/"
+        echo "  ├── qpkg.cfg"
+        echo "  ├── package_routines"
+        echo "  ├── shared/"
+        echo "  └── icons/"
+        exit 1
+    fi
+
+    # Validate required files exist
+    if [ ! -f "${QPKG_SOURCE}/qpkg.cfg" ]; then
+        echo "ERROR: qpkg.cfg not found in ${QPKG_SOURCE}"
+        exit 1
+    fi
+
+    if [ ! -f "${QPKG_SOURCE}/package_routines" ]; then
+        echo "ERROR: package_routines not found in ${QPKG_SOURCE}"
+        exit 1
+    fi
+
     if [ ! -f "${DRIVER_OUTPUT}/r8152.ko" ]; then
         echo "ERROR: Driver not found at ${DRIVER_OUTPUT}/r8152.ko"
         echo "Please build the driver first using ./build.sh driver"
@@ -49,8 +73,15 @@ copy_driver() {
 set_permissions() {
     echo "[3/5] Setting permissions..."
 
-    # Make scripts executable
-    chmod +x "${QPKG_SOURCE}/shared/RTL8159_Driver.sh"
+    # Make scripts executable if they exist
+    if [ -f "${QPKG_SOURCE}/shared/RTL8159_Driver.sh" ]; then
+        chmod +x "${QPKG_SOURCE}/shared/RTL8159_Driver.sh"
+    else
+        echo "ERROR: ${QPKG_SOURCE}/shared/RTL8159_Driver.sh not found"
+        echo "QPKG_SOURCE directory contents:"
+        ls -laR "${QPKG_SOURCE}/" || true
+        exit 1
+    fi
 
     # Fix line endings (dos2unix)
     if command -v dos2unix > /dev/null 2>&1; then
