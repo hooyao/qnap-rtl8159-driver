@@ -129,6 +129,33 @@ create_qpkg() {
         exit 1
     fi
 
+    # Validate qpkg source directory exists
+    if [ ! -d "qpkg/RTL8159_Driver" ]; then
+        echo "ERROR: QPKG source template not found at qpkg/RTL8159_Driver"
+        echo "Current directory: $(pwd)"
+        echo "Directory contents:"
+        ls -la qpkg/ || echo "qpkg directory does not exist"
+        exit 1
+    fi
+
+    # Validate required template files
+    if [ ! -f "qpkg/RTL8159_Driver/qpkg.cfg" ]; then
+        echo "ERROR: qpkg.cfg not found in template"
+        exit 1
+    fi
+
+    if [ ! -f "qpkg/RTL8159_Driver/package_routines" ]; then
+        echo "ERROR: package_routines not found in template"
+        exit 1
+    fi
+
+    if [ ! -f "qpkg/RTL8159_Driver/shared/RTL8159_Driver.sh" ]; then
+        echo "ERROR: RTL8159_Driver.sh not found in template"
+        exit 1
+    fi
+
+    echo "QPKG template validation passed"
+
     # Remove old container if exists
     docker rm -f "${CONTAINER_NAME}-qpkg" 2>/dev/null || true
 
