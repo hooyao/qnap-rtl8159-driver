@@ -270,6 +270,96 @@ build.sh all
     └── Build with qbuild
 ```
 
+### Phase 7: Version Configuration System
+
+**Problem Encountered**:
+When GitHub Actions workflow was triggered by tag `release-2.20.1b1`, it extracted the version from the tag and used `2.20.1b1` as the driver version. However, the actual Realtek driver version is `2.20.1` (no suffix). The workflow then tried to download a non-existent driver version, causing the build to fail.
+
+**Root Cause**:
+- QPKG package version and Realtek driver version were conflated
+- Git tags like `release-2.20.1b1` represent package versions (for beta releases, patches, etc.)
+- Driver version must match actual Realtek release tags from https://github.com/wget/realtek-r8152-linux
+- These versions can be completely independent (e.g., driver 2.20.1 packaged as 5.55.1b1)
+
+**Solution - Version Configuration File** (`versions.yml`):
+
+**Step 1**: Create `versions.yml` to control driver and kernel versions
+```yaml
+# Realtek driver version (must match a release tag)
+driver_version: "2.20.1"
+
+# Target kernel version (must match your QNAP kernel)
+kernel_version: "5.10.60"
+```
+
+**Step 2**: Update `build.sh` to read from `versions.yml`
+```bash
+# Load versions from versions.yml
+if [ -f "versions.yml" ]; then
+    DEFAULT_DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+    DEFAULT_KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+else
+    echo "WARNING: versions.yml not found, using hardcoded defaults"
+    DEFAULT_DRIVER_VERSION="2.20.1"
+    DEFAULT_KERNEL_VERSION="5.10.60"
+fi
+
+# Use environment variables if set, otherwise use defaults from versions.yml
+DRIVER_VERSION="${DRIVER_VERSION:-${DEFAULT_DRIVER_VERSION}}"
+KERNEL_VERSION="${KERNEL_VERSION:-${DEFAULT_KERNEL_VERSION}}"
+QPKG_VERSION="${QPKG_VERSION:-${DRIVER_VERSION}}"
+```
+
+**Step 3**: Update GitHub Actions workflow to use `versions.yml`
+```yaml
+- name: Load versions from versions.yml
+  id: get_version
+  run: |
+    # Read driver and kernel versions from versions.yml (always from file)
+    DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+    KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+
+    if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+      # Manual trigger - use input for QPKG version
+      QPKG_VERSION="${{ github.event.inputs.qpkg_version }}"
+    else
+      # Tag trigger - extract QPKG version from tag (e.g., release-5.55.1b1 -> 5.55.1b1)
+      QPKG_VERSION=${GITHUB_REF#refs/tags/release-}
+    fi
+
+    echo "driver_version=$DRIVER_VERSION" >> $GITHUB_OUTPUT
+    echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+    echo "qpkg_version=$QPKG_VERSION" >> $GITHUB_OUTPUT
+```
+
+**Benefits**:
+1. ✅ **Version Separation**: QPKG version independent from driver version
+2. ✅ **Controlled Versions**: Driver/kernel versions controlled in repository
+3. ✅ **Flexible Packaging**: Can create multiple QPKG versions with same driver
+4. ✅ **Build Consistency**: All builds use correct driver version from `versions.yml`
+5. ✅ **Clear Semantics**:
+   - `driver_version`: Always matches Realtek release tag
+   - `kernel_version`: Always matches target QNAP kernel
+   - `qpkg_version`: Package release version (can have suffixes like b1, rc1, -1)
+
+**Example Scenarios**:
+```bash
+# Tag: release-2.20.1
+# Result: QPKG 2.20.1 with driver 2.20.1
+
+# Tag: release-2.20.1b1
+# Result: QPKG 2.20.1b1 with driver 2.20.1 (beta package, same driver)
+
+# Tag: release-5.55.1b1
+# Result: QPKG 5.55.1b1 with driver 2.20.1 (independent versioning)
+
+# Manual build with override
+QPKG_VERSION=test1.0 ./build.sh all
+# Result: QPKG test1.0 with driver 2.20.1
+```
+
+**Result**: ✅ Version confusion eliminated, builds always use correct driver version
+
 ## Key Learnings
 
 ### 1. QDK is Essential
@@ -307,6 +397,15 @@ Advantages of version-controlled templates over dynamic generation:
 - Consistent across builds
 - Easier debugging and maintenance
 - No risk of build script changes breaking packages
+
+### 8. Version Configuration Management
+Separation of concerns for version control:
+- **Driver Version**: Sourced from `versions.yml`, must match Realtek release tags
+- **Kernel Version**: Sourced from `versions.yml`, must match target QNAP kernel
+- **QPKG Version**: Derived from git tags or environment variables, independent from driver
+- This separation allows beta releases, patches, and custom builds without version conflicts
+- Centralized configuration prevents version mismatches across build systems
+- Git tags represent package releases, not driver versions
 
 ## Build System Architecture
 
@@ -347,6 +446,7 @@ quts_rtl/
 ├── build.sh                      # Main orchestration script
 ├── build_driver.sh              # Driver compilation logic
 ├── build_qpkg.sh                # QPKG packaging (template-based)
+├── versions.yml                 # Version configuration (driver, kernel)
 ├── qpkg/                        # QPKG source template (version controlled)
 │   └── RTL8159_Driver/
 │       ├── icons/               # Package icons (GIF)
@@ -362,6 +462,9 @@ quts_rtl/
 │       ├── package_routines    # Install/remove lifecycle scripts
 │       ├── build/              # Build output (ignored)
 │       └── x86_64/             # Driver copied here during build (ignored)
+├── .github/
+│   └── workflows/
+│       └── release.yml          # GitHub Actions CI/CD workflow
 ├── .gitignore                   # Git exclusions
 ├── README.md                    # User documentation
 └── CLAUDE.md                    # This file
@@ -469,16 +572,19 @@ $ ip link show
 ✅ **Version Control**: All QPKG source files tracked in git
 ✅ **Template-Based**: Easy customization without build script changes
 ✅ **Icons Included**: Custom icons part of package
+✅ **Version Management**: Centralized version configuration via `versions.yml`
+✅ **CI/CD Integration**: GitHub Actions workflow with proper version handling
 
 ## Future Enhancements
 
 Potential improvements:
 1. **Multi-Architecture**: Support ARM-based QNAP models
 2. **Kernel Versions**: Support multiple kernel versions
-3. **CI/CD**: GitHub Actions for automated builds
+3. ~~**CI/CD**: GitHub Actions for automated builds~~ ✅ **IMPLEMENTED**
 4. **Testing**: Automated testing in QEMU
 5. **Updates**: Auto-detect new driver versions
 6. **Patches**: More comprehensive driver patching
+7. **Version Checks**: Validate `versions.yml` against available releases
 
 ## Conclusion
 
@@ -494,7 +600,10 @@ The key success factors were:
 - Template-based approach for maintainability
 - Proper variable usage (`QPKG_ROOT` vs `SYS_QPKG_DIR`)
 - Version-controlled QPKG source files
+- Centralized version configuration (`versions.yml`)
+- Separation of QPKG and driver versions
 - Docker for reproducibility
+- GitHub Actions CI/CD automation
 - Comprehensive testing and iteration on actual hardware
 
 The resulting QPKG:
@@ -503,22 +612,25 @@ The resulting QPKG:
 - ✅ Remove button appears and works in App Center
 - ✅ Custom icons display properly
 - ✅ All files version controlled and maintainable
+- ✅ Automated builds via GitHub Actions
+- ✅ Proper version separation (QPKG vs driver)
 
 ---
 
 **Project Evolution**:
 - **Initial Build**: ~4 hours (basic functionality)
-- **Improvements**: +3 hours (remove button, template structure, icon integration)
-- **Total Duration**: ~7 hours
+- **Template Structure**: +3 hours (remove button, template structure, icon integration)
+- **CI/CD & Version Management**: +2 hours (GitHub Actions, version configuration)
+- **Total Duration**: ~9 hours
 
 **Project Metrics**:
-- **Lines of Code**: ~800 (scripts + Dockerfile + templates)
+- **Lines of Code**: ~1000 (scripts + Dockerfile + templates + CI/CD)
 - **Docker Image Size**: ~2GB
 - **Build Success Rate**: 100% (after environment stabilization)
-- **Files Version Controlled**: All source files, icons, and templates
+- **Files Version Controlled**: All source files, icons, templates, and configuration
 
 **Date**: November 15, 2025
 **Author**: Built with Claude (Anthropic)
 **User**: hooyao@gmail.com
 
-**Final Status**: ✅ Complete with full functionality and proper QDK compliance
+**Final Status**: ✅ Complete with full functionality, proper QDK compliance, and automated CI/CD

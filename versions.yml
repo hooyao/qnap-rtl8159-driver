@@ -1,0 +1,24 @@
+# Version configuration for RTL8159 Driver QPKG
+# This file controls the versions used during the build process
+
+# Realtek driver version to download and compile
+# This should match an actual release tag from:
+# https://github.com/wget/realtek-r8152-linux/releases
+driver_version: "2.20.1"
+
+# Target kernel version for compilation
+# This should match the kernel version on your QNAP device
+# Check with: uname -r
+kernel_version: "5.10.60"
+
+# Notes:
+# - driver_version: Must match a valid Realtek release tag
+# - kernel_version: Must match your QNAP kernel (check with uname -r)
+# - qpkg_version: Derived from git tag (e.g., release-5.55.1b1 -> 5.55.1b1)
+#                 QPKG version is independent of driver version
+#                 It represents the package release version
+#
+# Example:
+# - driver_version: 2.20.1 (actual Realtek driver)
+# - git tag: release-5.55.1b1
+# - Result: QPKG contains driver 2.20.1, packaged as version 5.55.1b1

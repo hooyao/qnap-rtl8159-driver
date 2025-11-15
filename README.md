@@ -103,6 +103,7 @@ quts_rtl/
 ├── build.sh               # Main orchestration script
 ├── build_driver.sh        # Driver compilation script
 ├── build_qpkg.sh          # QPKG packaging script
+├── versions.yml           # Version configuration (driver, kernel)
 ├── qpkg/                  # QPKG source template (version controlled)
 │   └── RTL8159_Driver/
 │       ├── icons/         # Package icons
@@ -174,21 +175,40 @@ Main orchestration:
 
 ## Advanced Usage
 
-### Custom Driver Version
+### Version Configuration
 
-You can build different driver versions by setting the `DRIVER_VERSION` environment variable:
+Version settings are controlled by `versions.yml`:
 
-```bash
-# Build with a specific driver version
-DRIVER_VERSION=2.17.1 ./build.sh all
-DRIVER_VERSION=2.18.0 ./build.sh all
-DRIVER_VERSION=2.19.0 ./build.sh all
+```yaml
+# Realtek driver version (must match a release tag)
+driver_version: "2.20.1"
 
-# Default version (if not specified)
-./build.sh all  # Uses 2.20.1
+# Target kernel version (must match your QNAP kernel)
+kernel_version: "5.10.60"
 ```
 
-**Output**: The QPKG filename will reflect the version, e.g., `RTL8159_Driver_2.19.0_x86_64.qpkg`
+**Key Points**:
+- `driver_version`: Always sourced from `versions.yml`, matches Realtek release tags
+- `kernel_version`: Always sourced from `versions.yml`, matches target QNAP kernel
+- `qpkg_version`: Derived from git tag or can be overridden via environment variable
+
+**Build Scenarios**:
+
+```bash
+# Standard build (uses versions.yml defaults)
+./build.sh all
+# Output: RTL8159_Driver_2.20.1_x86_64.qpkg
+
+# Override QPKG version only (driver version stays 2.20.1 from versions.yml)
+QPKG_VERSION=5.55.1b1 ./build.sh all
+# Output: RTL8159_Driver_5.55.1b1_x86_64.qpkg (contains driver 2.20.1)
+
+# For GitHub releases, use tags
+git tag release-5.55.1b1 && git push --tags
+# This will build QPKG version 5.55.1b1 with driver version from versions.yml
+```
+
+**Note**: Driver and kernel versions should only be changed by editing `versions.yml` and committing to the repository. This ensures consistency across all builds.
 
 Available driver versions can be found at:
 - https://github.com/wget/realtek-r8152-linux/tags

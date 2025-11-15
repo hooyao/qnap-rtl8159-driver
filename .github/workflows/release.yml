@@ -7,11 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       qpkg_version:
-        description: 'QPKG package version (e.g., 1.0.0)'
-        required: false
-        default: '2.20.1'
-      driver_version:
-        description: 'Realtek driver version (e.g., 2.20.1)'
+        description: 'QPKG package version (e.g., 2.20.1b1)'
         required: false
         default: '2.20.1'
       create_release:
@@ -30,22 +26,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract version from tag or input
+      - name: Load versions from versions.yml
         id: get_version
         run: |
+          # Read driver and kernel versions from versions.yml (these are always from the file)
+          DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+          KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Manual trigger - use input versions
+            # Manual trigger - use input for QPKG version
             QPKG_VERSION="${{ github.event.inputs.qpkg_version }}"
-            DRIVER_VERSION="${{ github.event.inputs.driver_version }}"
           else
-            # Tag trigger - extract version from tag (e.g., release-2.20.1b -> 2.20.1b)
-            VERSION=${GITHUB_REF#refs/tags/release-}
-            QPKG_VERSION="$VERSION"
-            DRIVER_VERSION="$VERSION"
+            # Tag trigger - extract QPKG version from tag (e.g., release-5.55.1b1 -> 5.55.1b1)
+            QPKG_VERSION=${GITHUB_REF#refs/tags/release-}
           fi
-          echo "qpkg_version=$QPKG_VERSION" >> $GITHUB_OUTPUT
+
           echo "driver_version=$DRIVER_VERSION" >> $GITHUB_OUTPUT
-          echo "Building QPKG version: $QPKG_VERSION with driver version: $DRIVER_VERSION"
+          echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+          echo "qpkg_version=$QPKG_VERSION" >> $GITHUB_OUTPUT
+          echo "Building QPKG version: $QPKG_VERSION with driver version: $DRIVER_VERSION (kernel: $KERNEL_VERSION)"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -53,7 +52,7 @@ jobs:
       - name: Build driver and QPKG
         run: |
           # Use the build.sh script which handles everything
-          export DRIVER_VERSION="${{ steps.get_version.outputs.driver_version }}"
+          # Versions are read from versions.yml by build.sh, we only override QPKG_VERSION
           export QPKG_VERSION="${{ steps.get_version.outputs.qpkg_version }}"
           bash build.sh all
 
