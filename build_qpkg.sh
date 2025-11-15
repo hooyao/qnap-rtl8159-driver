@@ -69,9 +69,17 @@ copy_driver() {
     echo "Driver copied to ${QPKG_SOURCE}/x86_64/"
 }
 
-# Set permissions
+# Set permissions and update version
 set_permissions() {
-    echo "[3/5] Setting permissions..."
+    echo "[3/5] Setting permissions and updating version..."
+
+    # Update version in qpkg.cfg if DRIVER_VERSION is set
+    if [ -n "${DRIVER_VERSION}" ]; then
+        echo "Updating qpkg.cfg with version: ${DRIVER_VERSION}"
+        sed -i "s/^QPKG_VER=.*/QPKG_VER=\"${DRIVER_VERSION}\"/" "${QPKG_SOURCE}/qpkg.cfg"
+    else
+        echo "Using default version from qpkg.cfg"
+    fi
 
     # Make scripts executable if they exist
     if [ -f "${QPKG_SOURCE}/shared/RTL8159_Driver.sh" ]; then
@@ -88,7 +96,7 @@ set_permissions() {
         find "${QPKG_SOURCE}" -type f \( -name "*.sh" -o -name "package_routines" \) -exec dos2unix {} \; 2>/dev/null || true
     fi
 
-    echo "Permissions set"
+    echo "Permissions set and version updated"
 }
 
 # Build QPKG with qbuild

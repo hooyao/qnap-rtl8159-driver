@@ -49,9 +49,21 @@ jobs:
           bash build.sh all
 
       - name: List built artifacts
+        if: always()
         run: |
           echo "Built artifacts:"
-          ls -lh output/
+          echo "================"
+          if [ -d "output" ]; then
+            echo "Output directory structure:"
+            find output -type f -exec ls -lh {} \;
+            echo ""
+            echo "Summary:"
+            ls -lh output/ 2>/dev/null || echo "No files in output/"
+            ls -lh output/driver/ 2>/dev/null || echo "No driver files"
+            ls -lh output/*.qpkg 2>/dev/null || echo "No QPKG files"
+          else
+            echo "ERROR: output directory does not exist"
+          fi
 
       - name: Create GitHub Release and Upload Assets
         if: github.event_name == 'push' || github.event.inputs.create_release == 'true'
