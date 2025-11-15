@@ -6,8 +6,12 @@ on:
       - 'release-*'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to build (e.g., 2.20.1)'
+      qpkg_version:
+        description: 'QPKG package version (e.g., 1.0.0)'
+        required: false
+        default: '2.20.1'
+      driver_version:
+        description: 'Realtek driver version (e.g., 2.20.1)'
         required: false
         default: '2.20.1'
       create_release:
@@ -30,14 +34,18 @@ jobs:
         id: get_version
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Manual trigger - use input version
-            VERSION="${{ github.event.inputs.version }}"
+            # Manual trigger - use input versions
+            QPKG_VERSION="${{ github.event.inputs.qpkg_version }}"
+            DRIVER_VERSION="${{ github.event.inputs.driver_version }}"
           else
             # Tag trigger - extract version from tag (e.g., release-2.20.1b -> 2.20.1b)
             VERSION=${GITHUB_REF#refs/tags/release-}
+            QPKG_VERSION="$VERSION"
+            DRIVER_VERSION="$VERSION"
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
+          echo "qpkg_version=$QPKG_VERSION" >> $GITHUB_OUTPUT
+          echo "driver_version=$DRIVER_VERSION" >> $GITHUB_OUTPUT
+          echo "Building QPKG version: $QPKG_VERSION with driver version: $DRIVER_VERSION"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -45,23 +53,37 @@ jobs:
       - name: Build driver and QPKG
         run: |
           # Use the build.sh script which handles everything
-          export DRIVER_VERSION="${{ steps.get_version.outputs.version }}"
+          export DRIVER_VERSION="${{ steps.get_version.outputs.driver_version }}"
+          export QPKG_VERSION="${{ steps.get_version.outputs.qpkg_version }}"
           bash build.sh all
 
       - name: List built artifacts
+        if: always()
         run: |
           echo "Built artifacts:"
-          ls -lh output/
+          echo "================"
+          if [ -d "output" ]; then
+            echo "Output directory structure:"
+            find output -type f -exec ls -lh {} \;
+            echo ""
+            echo "Summary:"
+            ls -lh output/ 2>/dev/null || echo "No files in output/"
+            ls -lh output/driver/ 2>/dev/null || echo "No driver files"
+            ls -lh output/*.qpkg 2>/dev/null || echo "No QPKG files"
+          else
+            echo "ERROR: output directory does not exist"
+          fi
 
       - name: Create GitHub Release and Upload Assets
         if: github.event_name == 'push' || github.event.inputs.create_release == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          name: RTL8159 Driver ${{ steps.get_version.outputs.version }}
+          name: RTL8159 Driver ${{ steps.get_version.outputs.qpkg_version }}
           body: |
             ## RTL8159 USB Ethernet Driver for QNAP
 
-            **Version**: ${{ steps.get_version.outputs.version }}
+            **Package Version**: ${{ steps.get_version.outputs.qpkg_version }}
+            **Driver Version**: ${{ steps.get_version.outputs.driver_version }}
             **Build Date**: ${{ github.event.head_commit.timestamp }}
 
             ### Installation

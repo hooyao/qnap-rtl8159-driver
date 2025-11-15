@@ -14,6 +14,7 @@ DOCKER_IMAGE="rtl8159-builder"
 DOCKER_TAG="latest"
 CONTAINER_NAME="rtl8159-build"
 DRIVER_VERSION="${DRIVER_VERSION:-2.20.1}"
+QPKG_VERSION="${QPKG_VERSION:-${DRIVER_VERSION}}"
 
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
@@ -43,12 +44,15 @@ Optional:
                        If not provided, will download generic kernel
 
 Environment Variables:
-  DRIVER_VERSION   - Driver version to build (default: 2.20.1)
+  DRIVER_VERSION   - Realtek driver version to download (default: 2.20.1)
+  QPKG_VERSION     - QPKG package version (default: same as DRIVER_VERSION)
 
 Examples:
   $0 all                                    # Full build
   $0 all /path/to/kernel.tar.gz             # Full build with QNAP kernel
   DRIVER_VERSION=2.19.0 $0 all              # Build specific driver version
+  QPKG_VERSION=1.0.0 $0 all                 # Build with custom package version
+  DRIVER_VERSION=2.20.1 QPKG_VERSION=1.0.0 $0 all  # Different driver and package versions
   $0 driver                                  # Compile driver only
   $0 shell                                   # Interactive debugging
 
@@ -170,11 +174,12 @@ create_qpkg() {
     docker run --name "${CONTAINER_NAME}-qpkg" \
         ${QPKG_VOLUME_MOUNTS} \
         -e DRIVER_VERSION="${DRIVER_VERSION}" \
+        -e QPKG_VERSION="${QPKG_VERSION}" \
         "${DOCKER_IMAGE}:${DOCKER_TAG}" \
         /bin/bash -c "/build/build_qpkg.sh"
 
     # Find the generated QPKG file
-    QPKG_FILE="output/RTL8159_Driver_${DRIVER_VERSION}_x86_64.qpkg"
+    QPKG_FILE="output/RTL8159_Driver_${QPKG_VERSION}_x86_64.qpkg"
 
     if [ -f "${QPKG_FILE}" ]; then
         echo ""
