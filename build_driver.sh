@@ -4,7 +4,7 @@ set -e
 # Configuration
 QNAP_GPL_URL="https://sourceforge.net/projects/qosgpl/files"
 KERNEL_VERSION="${KERNEL_VERSION:-5.10.60}"
-DRIVER_VERSION="${DRIVER_VERSION:-2.17.1}"
+DRIVER_VERSION="${DRIVER_VERSION:-2.20.1}"
 REALTEK_DRIVER_URL="https://github.com/wget/realtek-r8152-linux/archive/refs/tags/v${DRIVER_VERSION}.tar.gz"
 # RTL8159 is part of the r8152 driver family (r8152.ko supports RTL8152/8153/8156/8157/8159)
 DRIVER_NAME="r8152"

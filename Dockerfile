@@ -52,7 +52,7 @@ RUN chmod +x /build/*.sh
 # Set environment variables
 ENV ARCH=x86_64
 ENV KERNEL_VERSION=5.10.60
-ENV DRIVER_VERSION=2.17.1
+ENV DRIVER_VERSION=2.20.1
 ENV PATH="/opt/QDK:${PATH}"
 
 # Default command

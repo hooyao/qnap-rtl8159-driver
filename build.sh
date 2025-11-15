@@ -13,6 +13,7 @@ echo "=========================================="
 DOCKER_IMAGE="rtl8159-builder"
 DOCKER_TAG="latest"
 CONTAINER_NAME="rtl8159-build"
+DRIVER_VERSION="${DRIVER_VERSION:-2.20.1}"
 
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
@@ -84,6 +85,7 @@ compile_driver() {
     # Run build
     docker run --name "${CONTAINER_NAME}" \
         ${VOLUME_MOUNTS} \
+        -e DRIVER_VERSION="${DRIVER_VERSION}" \
         "${DOCKER_IMAGE}:${DOCKER_TAG}" \
         /bin/bash -c "/build/build_driver.sh"
 
@@ -121,12 +123,13 @@ create_qpkg() {
     # Run QPKG creation with QDK
     docker run --name "${CONTAINER_NAME}-qpkg" \
         -v $(pwd)/output:/build/output \
+        -e DRIVER_VERSION="${DRIVER_VERSION}" \
         "${DOCKER_IMAGE}:${DOCKER_TAG}" \
         /bin/bash -c "/build/create_qpkg_qdk.sh"
 
     # QDK creates QDK_*.qpkg, we need to copy and rename it
     QDK_QPKG=$(find output/qpkg_qdk/RTL8159_Driver/build -name "*x86_64.qpkg" -type f | head -n 1)
-    QPKG_FILE="output/RTL8159_Driver_2.17.1_x86_64.qpkg"
+    QPKG_FILE="output/RTL8159_Driver_${DRIVER_VERSION}_x86_64.qpkg"
 
     if [ -f "${QDK_QPKG}" ]; then
         cp "${QDK_QPKG}" "${QPKG_FILE}"
