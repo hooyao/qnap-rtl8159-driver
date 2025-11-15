@@ -1,0 +1,150 @@
+######################################################################
+# Package routines for RTL8159 USB Ethernet Driver
+######################################################################
+
+QPKG_NAME="RTL8159_Driver"
+QPKG_ROOT=$(/sbin/getcfg ${QPKG_NAME} Install_Path -f /etc/config/qpkg.conf)
+DRIVER_FILE="r8152.ko"
+KERNEL_VERSION=$(uname -r)
+MODULE_DIR="/lib/modules/${KERNEL_VERSION}"
+LOG_FILE="${QPKG_ROOT}/install.log"
+
+# Logging function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
+}
+
+######################################################################
+# Define any package specific operations that shall be performed when
+# the package is installed.
+######################################################################
+pkg_pre_install(){
+    log "=== Pre-installation started ==="
+
+    # Create module directory
+    mkdir -p "${MODULE_DIR}"
+
+    # Backup existing driver
+    if [ -f "${MODULE_DIR}/${DRIVER_FILE}" ]; then
+        cp "${MODULE_DIR}/${DRIVER_FILE}" "${MODULE_DIR}/${DRIVER_FILE}.backup.$(date +%s)"
+        log "Backed up existing driver"
+    fi
+
+    # Unload existing driver
+    if lsmod | grep -q "^r8152 "; then
+        rmmod r8152 2>/dev/null || modprobe -r r8152 2>/dev/null || true
+        log "Unloaded existing r8152 driver"
+    fi
+}
+
+pkg_install(){
+    log "=== Installation started ==="
+
+    # Determine architecture
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64)
+            DRIVER_SRC="${QPKG_ROOT}/x86_64/${DRIVER_FILE}"
+            ;;
+        *)
+            log "ERROR: Unsupported architecture: $ARCH"
+            return 1
+            ;;
+    esac
+
+    # Copy driver
+    if [ -f "${DRIVER_SRC}" ]; then
+        cp "${DRIVER_SRC}" "${MODULE_DIR}/"
+        chmod 644 "${MODULE_DIR}/${DRIVER_FILE}"
+        log "Installed driver to ${MODULE_DIR}/"
+    else
+        log "ERROR: Driver not found: ${DRIVER_SRC}"
+        return 1
+    fi
+
+    # Update module dependencies
+    depmod -a 2>/dev/null || true
+    log "Updated module dependencies"
+}
+
+pkg_post_install(){
+    log "=== Post-installation started ==="
+
+    # Load driver
+    if [ -f "${MODULE_DIR}/${DRIVER_FILE}" ]; then
+        insmod "${MODULE_DIR}/${DRIVER_FILE}" 2>/dev/null || modprobe r8152 2>/dev/null || true
+
+        if lsmod | grep -q "^r8152 "; then
+            log "Driver loaded successfully"
+
+            # Show driver info
+            modinfo r8152 2>/dev/null | head -10 | while read line; do
+                log "  $line"
+            done
+        else
+            log "WARNING: Driver may not have loaded properly"
+        fi
+    fi
+
+    log "=== Installation completed successfully ==="
+    echo ""
+    echo "=========================================="
+    echo "RTL8159 Driver installed!"
+    echo "=========================================="
+    echo "Log: ${LOG_FILE}"
+    echo "Please reconnect your USB Ethernet adapter"
+    echo "=========================================="
+}
+
+######################################################################
+# Define any package specific operations that shall be performed when
+# the package is removed.
+######################################################################
+PKG_PRE_REMOVE="{
+    log \"=== Pre-removal started ===\"
+
+    # Unload driver if loaded
+    if lsmod | grep -q \"^r8152 \"; then
+        log \"Unloading r8152 driver...\"
+        rmmod r8152 2>/dev/null || modprobe -r r8152 2>/dev/null || true
+        log \"Driver unloaded\"
+    fi
+}"
+
+PKG_MAIN_REMOVE="{
+    log \"=== Main removal started ===\"
+
+    # Remove driver file
+    if [ -f \"${MODULE_DIR}/${DRIVER_FILE}\" ]; then
+        rm -f \"${MODULE_DIR}/${DRIVER_FILE}\"
+        log \"Removed driver: ${MODULE_DIR}/${DRIVER_FILE}\"
+    fi
+
+    # Restore backup if exists (most recent backup)
+    BACKUP=\$(ls -t \"${MODULE_DIR}/${DRIVER_FILE}.backup.\"* 2>/dev/null | head -1)
+    if [ -n \"\$BACKUP\" ] && [ -f \"\$BACKUP\" ]; then
+        mv \"\$BACKUP\" \"${MODULE_DIR}/${DRIVER_FILE}\"
+        log \"Restored backup driver: \$BACKUP\"
+    fi
+
+    # Update module dependencies
+    log \"Updating module dependencies...\"
+    depmod -a 2>/dev/null || true
+    log \"Module dependencies updated\"
+}"
+
+PKG_POST_REMOVE="{
+    log \"=== Post-removal started ===\"
+
+    # Try to reload original driver if available
+    if [ -f \"${MODULE_DIR}/${DRIVER_FILE}\" ]; then
+        log \"Reloading original driver...\"
+        modprobe r8152 2>/dev/null || true
+        if lsmod | grep -q \"^r8152 \"; then
+            log \"Original driver reloaded successfully\"
+        fi
+    fi
+
+    log \"=== Removal completed ===\"
+    echo \"RTL8159 Driver has been removed\"
+}"

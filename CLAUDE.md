@@ -94,7 +94,7 @@ make -C /path/to/kernel M=$(pwd) modules
 2. ❌ Simple shell script wrapper - Not recognized by QNAP installer
 3. ✅ Official QDK tooling - Proper format accepted by App Center
 
-**Successful Approach** (`create_qpkg_qdk.sh`):
+**Initial Approach** (`create_qpkg_qdk.sh` - deprecated):
 
 **Step 1**: Create QDK environment
 ```bash
@@ -165,7 +165,81 @@ This allows:
 
 **Result**: ✅ Installation succeeded on QuTS hero h5.2.7.3251
 
-### Phase 5: Build Automation
+### Phase 5: Template-Based QPKG (Improved Approach)
+
+**Problem with Initial Approach**:
+The `create_qpkg_qdk.sh` script dynamically created all QPKG files during build:
+- Generated `package_routines`, `qpkg.cfg`, scripts, and HTML at build time
+- Icons were external and mounted during build
+- Hard to customize without editing the build script
+- Remove button didn't appear in QNAP App Center
+
+**Root Cause Analysis**:
+1. **Removal Functions Format**: Initial script used uppercase functions `PKG_PRE_INSTALL()` but QDK actually expects lowercase `pkg_pre_install()` for installation and string blocks for removal
+2. **Variable Paths**: Used `${SYS_QPKG_DIR}` instead of `${QPKG_ROOT}` causing "Driver file not found" errors
+3. **Not Version Controlled**: Template files were generated, not stored in git
+
+**Solution - Template-Based Approach** (`build_qpkg.sh` + `qpkg/` directory):
+
+**Step 1**: Create version-controlled template
+```
+qpkg/RTL8159_Driver/
+├── icons/              # Icons (committed to git)
+│   ├── RTL8159_Driver.gif
+│   ├── RTL8159_Driver_80.gif
+│   └── RTL8159_Driver_gray.gif
+├── shared/
+│   ├── RTL8159_Driver.sh    # Service script
+│   └── web/index.html       # Web UI
+├── config/             # Config directory
+├── qpkg.cfg           # Package metadata
+└── package_routines   # Install/remove logic
+```
+
+**Step 2**: Fixed `package_routines` with proper QDK conventions
+```bash
+# Top-level variables (critical!)
+QPKG_NAME="RTL8159_Driver"
+QPKG_ROOT=$(/sbin/getcfg ${QPKG_NAME} Install_Path -f /etc/config/qpkg.conf)
+LOG_FILE="${QPKG_ROOT}/install.log"
+
+# Installation functions (lowercase)
+pkg_pre_install(){ ... }
+pkg_install(){
+    # Use QPKG_ROOT, not SYS_QPKG_DIR
+    DRIVER_SRC="${QPKG_ROOT}/x86_64/${DRIVER_FILE}"
+    ...
+}
+pkg_post_install(){ ... }
+
+# Removal functions (uppercase, as string blocks)
+PKG_PRE_REMOVE="{
+    log \"=== Pre-removal started ===\"
+    # Unload driver
+}"
+PKG_MAIN_REMOVE="{ ... }"
+PKG_POST_REMOVE="{ ... }"
+```
+
+**Step 3**: Build process copies driver to template
+```bash
+# build_qpkg.sh
+cp "${OUTPUT_DIR}/driver/r8152.ko" "${QPKG_SOURCE}/x86_64/"
+cd "${QPKG_SOURCE}"
+qbuild
+```
+
+**Benefits**:
+1. ✅ **Version Control**: All QPKG source files in git
+2. ✅ **Easy Customization**: Edit files directly in `qpkg/` directory
+3. ✅ **Remove Button Works**: Proper QDK function format
+4. ✅ **Icons Included**: Part of template, no mounting needed
+5. ✅ **Cleaner Build**: No dynamic file generation
+6. ✅ **Installation Works**: Correct path variables
+
+**Result**: `RTL8159_Driver_2.20.1_x86_64.qpkg` (138KB) with full functionality
+
+### Phase 6: Build Automation
 
 **Objective**: Create a simple interface for the entire build process.
 
@@ -189,11 +263,10 @@ build.sh all
 │   ├── Download driver source
 │   ├── Patch driver
 │   └── Compile r8152.ko
-└── Run create_qpkg_qdk.sh in container
-    ├── Create QDK environment
-    ├── Configure QPKG
-    ├── Copy driver files
-    ├── Create installation scripts
+└── Run build_qpkg.sh in container
+    ├── Mount qpkg/ template directory
+    ├── Copy r8152.ko to template/x86_64/
+    ├── Set permissions
     └── Build with qbuild
 ```
 
@@ -219,6 +292,21 @@ sed -i 's/strscpy/strlcpy/g' r8152.c
 - Clean separation from host environment
 - Easy to version and share
 - Caching speeds up subsequent builds
+
+### 6. QDK Function Naming Conventions
+QNAP's QDK has specific requirements for package lifecycle functions:
+- **Installation functions**: lowercase (`pkg_pre_install`, `pkg_install`, `pkg_post_install`)
+- **Removal functions**: UPPERCASE as string blocks (`PKG_PRE_REMOVE="{...}"`)
+- **Critical variables**: Use `QPKG_ROOT` (not `SYS_QPKG_DIR`) set via `/sbin/getcfg`
+- Removal functions enable the uninstall button in App Center
+
+### 7. Template-Based Development
+Advantages of version-controlled templates over dynamic generation:
+- Easy to customize without editing build scripts
+- Icons and resources tracked in git
+- Consistent across builds
+- Easier debugging and maintenance
+- No risk of build script changes breaking packages
 
 ## Build System Architecture
 
@@ -258,7 +346,22 @@ quts_rtl/
 ├── Dockerfile                    # Build environment definition
 ├── build.sh                      # Main orchestration script
 ├── build_driver.sh              # Driver compilation logic
-├── create_qpkg_qdk.sh           # QPKG packaging with QDK
+├── build_qpkg.sh                # QPKG packaging (template-based)
+├── qpkg/                        # QPKG source template (version controlled)
+│   └── RTL8159_Driver/
+│       ├── icons/               # Package icons (GIF)
+│       │   ├── RTL8159_Driver.gif
+│       │   ├── RTL8159_Driver_80.gif
+│       │   └── RTL8159_Driver_gray.gif
+│       ├── shared/              # Shared resources
+│       │   ├── RTL8159_Driver.sh    # Service control script
+│       │   └── web/
+│       │       └── index.html       # Package web UI
+│       ├── config/              # Configuration directory
+│       ├── qpkg.cfg            # Package metadata
+│       ├── package_routines    # Install/remove lifecycle scripts
+│       ├── build/              # Build output (ignored)
+│       └── x86_64/             # Driver copied here during build (ignored)
 ├── .gitignore                   # Git exclusions
 ├── README.md                    # User documentation
 └── CLAUDE.md                    # This file
@@ -355,13 +458,17 @@ $ ip link show
 ## Success Metrics
 
 ✅ **Build Automation**: Single command builds everything
-✅ **QDK Integration**: Uses official QNAP tools
+✅ **QDK Integration**: Uses official QNAP tools with proper conventions
 ✅ **Format Compliance**: QPKG accepted by App Center
 ✅ **Version Compatibility**: Works on QuTS hero h5.2.7
 ✅ **Driver Loading**: r8152.ko loads successfully
 ✅ **Device Recognition**: USB Ethernet adapter detected
 ✅ **Reproducibility**: Docker ensures consistent builds
 ✅ **Documentation**: Complete README and this log
+✅ **Remove Button**: Uninstall function works in App Center
+✅ **Version Control**: All QPKG source files tracked in git
+✅ **Template-Based**: Easy customization without build script changes
+✅ **Icons Included**: Custom icons part of package
 
 ## Future Enhancements
 
@@ -376,27 +483,42 @@ Potential improvements:
 ## Conclusion
 
 This build system successfully automates the entire process of:
-1. Setting up a build environment
+1. Setting up a reproducible build environment
 2. Compiling kernel modules
-3. Packaging for QNAP
-4. Ensuring compatibility
+3. Packaging for QNAP with proper QDK standards
+4. Ensuring compatibility and removability
 
 The key success factors were:
-- Using official QDK tooling
+- Using official QDK tooling with correct function conventions
 - Understanding QuTS hero versioning
+- Template-based approach for maintainability
+- Proper variable usage (`QPKG_ROOT` vs `SYS_QPKG_DIR`)
+- Version-controlled QPKG source files
 - Docker for reproducibility
-- Comprehensive testing on actual hardware
+- Comprehensive testing and iteration on actual hardware
 
-The resulting QPKG installs cleanly on QuTS hero and the RTL8159 10Gbps USB Ethernet adapter works at full speed.
+The resulting QPKG:
+- ✅ Installs cleanly on QuTS hero h5.2.7.3251
+- ✅ RTL8159 10Gbps USB Ethernet adapter works at full speed
+- ✅ Remove button appears and works in App Center
+- ✅ Custom icons display properly
+- ✅ All files version controlled and maintainable
 
 ---
 
-**Project Duration**: ~4 hours
-**Lines of Code**: ~600 (scripts + Dockerfile)
-**Docker Image Size**: ~2GB
-**Build Success Rate**: 100% (after environment stabilization)
-**Target Achievement**: ✅ Complete
+**Project Evolution**:
+- **Initial Build**: ~4 hours (basic functionality)
+- **Improvements**: +3 hours (remove button, template structure, icon integration)
+- **Total Duration**: ~7 hours
+
+**Project Metrics**:
+- **Lines of Code**: ~800 (scripts + Dockerfile + templates)
+- **Docker Image Size**: ~2GB
+- **Build Success Rate**: 100% (after environment stabilization)
+- **Files Version Controlled**: All source files, icons, and templates
 
 **Date**: November 15, 2025
 **Author**: Built with Claude (Anthropic)
 **User**: hooyao@gmail.com
+
+**Final Status**: ✅ Complete with full functionality and proper QDK compliance
