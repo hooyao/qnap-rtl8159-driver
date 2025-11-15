@@ -26,22 +26,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
-        run: |
-          docker build -t rtl8159-builder .
-
       - name: Build driver and QPKG
         run: |
-          # Run the build process inside the container
-          docker run --rm \
-            -v "$(pwd)/output:/output" \
-            rtl8159-builder \
-            /bin/bash -c "
-              cd /build && \
-              bash build_driver.sh && \
-              bash build_qpkg.sh && \
-              cp qpkg/*.qpkg /output/ || true
-            "
+          # Use the build.sh script which handles everything
+          bash build.sh all
 
       - name: List built artifacts
         run: |
