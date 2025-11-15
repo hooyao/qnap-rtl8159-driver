@@ -34,13 +34,13 @@ jobs:
         run: |
           # Run the build process inside the container
           docker run --rm \
-            -v "$(pwd)/output:/output" \
+            -v "$(pwd)/output:/build/output" \
+            -v "$(pwd)/qpkg:/qpkg_source" \
             rtl8159-builder \
             /bin/bash -c "
               cd /build && \
               bash build_driver.sh && \
-              bash build_qpkg.sh && \
-              cp qpkg/*.qpkg /output/ || true
+              bash build_qpkg.sh
             "
 
       - name: List built artifacts
