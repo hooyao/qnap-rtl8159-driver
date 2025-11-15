@@ -13,7 +13,21 @@ echo "=========================================="
 DOCKER_IMAGE="rtl8159-builder"
 DOCKER_TAG="latest"
 CONTAINER_NAME="rtl8159-build"
-DRIVER_VERSION="${DRIVER_VERSION:-2.20.1}"
+
+# Load versions from versions.yml
+if [ -f "versions.yml" ]; then
+    # Parse YAML using grep and sed (simple approach, no external dependencies)
+    DEFAULT_DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+    DEFAULT_KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+else
+    echo "WARNING: versions.yml not found, using hardcoded defaults"
+    DEFAULT_DRIVER_VERSION="2.20.1"
+    DEFAULT_KERNEL_VERSION="5.10.60"
+fi
+
+# Use environment variables if set, otherwise use defaults from versions.yml
+DRIVER_VERSION="${DRIVER_VERSION:-${DEFAULT_DRIVER_VERSION}}"
+KERNEL_VERSION="${KERNEL_VERSION:-${DEFAULT_KERNEL_VERSION}}"
 QPKG_VERSION="${QPKG_VERSION:-${DRIVER_VERSION}}"
 
 # Check if Docker is available
@@ -44,15 +58,21 @@ Optional:
                        If not provided, will download generic kernel
 
 Environment Variables:
-  DRIVER_VERSION   - Realtek driver version to download (default: 2.20.1)
+  DRIVER_VERSION   - Realtek driver version to download (default: from versions.yml)
+  KERNEL_VERSION   - Target kernel version (default: from versions.yml)
   QPKG_VERSION     - QPKG package version (default: same as DRIVER_VERSION)
 
+Configuration:
+  Default versions are defined in versions.yml:
+    - driver_version: Realtek driver release tag
+    - kernel_version: Target kernel version
+  Environment variables override these defaults.
+
 Examples:
-  $0 all                                    # Full build
+  $0 all                                    # Full build (uses versions.yml)
   $0 all /path/to/kernel.tar.gz             # Full build with QNAP kernel
-  DRIVER_VERSION=2.19.0 $0 all              # Build specific driver version
-  QPKG_VERSION=1.0.0 $0 all                 # Build with custom package version
-  DRIVER_VERSION=2.20.1 QPKG_VERSION=1.0.0 $0 all  # Different driver and package versions
+  QPKG_VERSION=5.55.1b1 $0 all              # Override QPKG version only
+  DRIVER_VERSION=2.19.0 $0 all              # Override driver version
   $0 driver                                  # Compile driver only
   $0 shell                                   # Interactive debugging
 
@@ -102,6 +122,7 @@ compile_driver() {
     docker run --name "${CONTAINER_NAME}" \
         ${VOLUME_MOUNTS} \
         -e DRIVER_VERSION="${DRIVER_VERSION}" \
+        -e KERNEL_VERSION="${KERNEL_VERSION}" \
         "${DOCKER_IMAGE}:${DOCKER_TAG}" \
         /bin/bash -c "/build/build_driver.sh"
 
