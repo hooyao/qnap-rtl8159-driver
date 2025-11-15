@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -46,14 +48,10 @@ jobs:
           echo "Built artifacts:"
           ls -lh output/
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: RTL8159 Driver ${{ steps.get_version.outputs.version }}
+          name: RTL8159 Driver ${{ steps.get_version.outputs.version }}
           body: |
             ## RTL8159 USB Ethernet Driver for QNAP
 
@@ -81,18 +79,10 @@ jobs:
             ---
 
             Built automatically by GitHub Actions.
+          files: |
+            output/*.qpkg
           draft: false
           prerelease: false
-
-      - name: Upload QPKG to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./output/RTL8159_Driver_${{ steps.get_version.outputs.version }}_x86_64.qpkg
-          asset_name: RTL8159_Driver_${{ steps.get_version.outputs.version }}_x86_64.qpkg
-          asset_content_type: application/octet-stream
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
