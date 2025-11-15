@@ -37,7 +37,7 @@ jobs:
             -v "$(pwd)/output:/output" \
             rtl8159-builder \
             /bin/bash -c "
-              cd /workspace && \
+              cd /build && \
               bash build_driver.sh && \
               bash build_qpkg.sh && \
               cp qpkg/*.qpkg /output/ || true

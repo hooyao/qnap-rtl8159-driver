@@ -1,6 +1,10 @@
 # Build output
 output/
 
+# QPKG build artifacts
+qpkg/RTL8159_Driver/build/
+qpkg/RTL8159_Driver/x86_64/r8152.ko
+
 # Docker build cache
 .docker/
 

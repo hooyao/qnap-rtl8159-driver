@@ -42,11 +42,23 @@ Optional:
   kernel_source_path - Path to QNAP GPL kernel source tarball
                        If not provided, will download generic kernel
 
+Environment Variables:
+  DRIVER_VERSION   - Driver version to build (default: 2.20.1)
+
 Examples:
-  $0 all                           # Full build with generic kernel
-  $0 all /path/to/kernel.tar.gz    # Full build with QNAP kernel
-  $0 driver                         # Compile driver only
-  $0 shell                          # Interactive debugging
+  $0 all                                    # Full build
+  $0 all /path/to/kernel.tar.gz             # Full build with QNAP kernel
+  DRIVER_VERSION=2.19.0 $0 all              # Build specific driver version
+  $0 driver                                  # Compile driver only
+  $0 shell                                   # Interactive debugging
+
+Icons:
+  Icons are located in qpkg/RTL8159_Driver/icons/ directory.
+  Required files (64x64 GIF for standard, 80x80 for dialog):
+    - RTL8159_Driver.gif (enabled state)
+    - RTL8159_Driver_gray.gif (disabled state)
+    - RTL8159_Driver_80.gif (80x80, dialog popup)
+  These files are included in the qpkg source template.
 
 EOF
 }
@@ -120,19 +132,24 @@ create_qpkg() {
     # Remove old container if exists
     docker rm -f "${CONTAINER_NAME}-qpkg" 2>/dev/null || true
 
-    # Run QPKG creation with QDK
+    # Prepare volume mounts for QPKG creation
+    # Mount output directory for driver files and final QPKG
+    # Mount qpkg directory which contains the source template with icons
+    QPKG_VOLUME_MOUNTS="-v $(pwd)/output:/build/output"
+    QPKG_VOLUME_MOUNTS="${QPKG_VOLUME_MOUNTS} -v $(pwd)/qpkg:/qpkg_source"
+
+    # Run QPKG creation with template-based approach
+    # Icons are now part of the qpkg/RTL8159_Driver/icons/ directory
     docker run --name "${CONTAINER_NAME}-qpkg" \
-        -v $(pwd)/output:/build/output \
+        ${QPKG_VOLUME_MOUNTS} \
         -e DRIVER_VERSION="${DRIVER_VERSION}" \
         "${DOCKER_IMAGE}:${DOCKER_TAG}" \
-        /bin/bash -c "/build/create_qpkg_qdk.sh"
+        /bin/bash -c "/build/build_qpkg.sh"
 
-    # QDK creates QDK_*.qpkg, we need to copy and rename it
-    QDK_QPKG=$(find output/qpkg_qdk/RTL8159_Driver/build -name "*x86_64.qpkg" -type f | head -n 1)
+    # Find the generated QPKG file
     QPKG_FILE="output/RTL8159_Driver_${DRIVER_VERSION}_x86_64.qpkg"
 
-    if [ -f "${QDK_QPKG}" ]; then
-        cp "${QDK_QPKG}" "${QPKG_FILE}"
+    if [ -f "${QPKG_FILE}" ]; then
         echo ""
         echo "QPKG package created successfully!"
         echo "Location: ${QPKG_FILE}"
@@ -148,7 +165,7 @@ create_qpkg() {
         echo "=========================================="
     else
         echo "ERROR: QPKG creation failed!"
-        echo "QDK did not create the expected package file."
+        echo "Expected package file not found: ${QPKG_FILE}"
         exit 1
     fi
 

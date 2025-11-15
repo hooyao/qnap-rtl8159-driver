@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTL8159 USB Ethernet Driver</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #0066cc;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #0088cc;
+            margin-top: 25px;
+        }
+        .version {
+            background-color: #e7f3ff;
+            padding: 10px 15px;
+            border-left: 4px solid #0066cc;
+            margin: 20px 0;
+        }
+        .feature-list {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .feature-list li {
+            margin: 8px 0;
+        }
+        .command-box {
+            background-color: #2d2d2d;
+            color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+        }
+        .note {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 10px 15px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RTL8159 USB Ethernet Driver for QNAP</h1>
+
+        <div class="version">
+            <strong>Version:</strong> 2.20.1<br>
+            <strong>Kernel:</strong> 5.10.60 (x86_64)<br>
+            <strong>Architecture:</strong> x86_64
+        </div>
+
+        <h2>Description</h2>
+        <p>
+            High-performance kernel driver for Realtek RTL8152/RTL8153/RTL8156/RTL8157/RTL8159
+            USB Ethernet adapters. This driver enables support for high-speed USB network adapters
+            up to 10Gbps on QNAP NAS systems.
+        </p>
+
+        <h2>Features</h2>
+        <ul class="feature-list">
+            <li>✓ Supports up to 10Gbps USB 3.2 Gen 2x2 network adapters</li>
+            <li>✓ Compatible with 2.5G/5G/10G USB Ethernet dongles</li>
+            <li>✓ Optimized for QNAP QuTS hero h5.x.x and QTS 4.x/5.x</li>
+            <li>✓ No system reboot required - driver loads immediately after installation</li>
+            <li>✓ Automatic loading at system boot</li>
+            <li>✓ Hot-plug support - connect adapter anytime</li>
+        </ul>
+
+        <h2>Supported Devices</h2>
+        <ul>
+            <li><strong>RTL8152B/8153:</strong> Gigabit (1Gbps) USB Ethernet</li>
+            <li><strong>RTL8156/8156B:</strong> 2.5 Gigabit USB Ethernet</li>
+            <li><strong>RTL8157:</strong> 5 Gigabit USB Ethernet</li>
+            <li><strong>RTL8159:</strong> 10 Gigabit USB Ethernet</li>
+        </ul>
+
+        <div class="note">
+            <strong>Note:</strong> The driver is loaded automatically after installation.
+            Simply connect your Realtek USB Ethernet adapter and it will be detected.
+        </div>
+
+        <h2>Verification</h2>
+        <p>To verify the driver is loaded and working, connect via SSH and run:</p>
+
+        <div class="command-box">
+# Check if driver is loaded<br>
+lsmod | grep r8152<br>
+<br>
+# View driver information<br>
+modinfo r8152<br>
+<br>
+# List network interfaces<br>
+ip link show
+        </div>
+
+        <h2>Support</h2>
+        <p>
+            <strong>GitHub:</strong> <a href="https://github.com/hooyao/quts_rtl" target="_blank">github.com/hooyao/quts_rtl</a><br>
+            <strong>Driver Source:</strong> <a href="https://github.com/wget/realtek-r8152-linux" target="_blank">github.com/wget/realtek-r8152-linux</a>
+        </p>
+
+        <h2>License</h2>
+        <p>GPL v2 - See driver source for full license text</p>
+    </div>
+</body>
+</html>

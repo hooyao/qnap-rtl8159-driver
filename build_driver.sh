@@ -17,56 +17,36 @@ echo "Driver Version: ${DRIVER_VERSION}"
 echo "Note: RTL8159 uses r8152.ko driver"
 echo "==================================="
 
-# Function to download and extract QNAP GPL source
-download_kernel_source() {
-    echo "[1/6] Downloading QNAP GPL kernel source..."
+# Function to verify kernel source
+verify_kernel_source() {
+    echo "[1/6] Verifying kernel source..."
 
-    mkdir -p /build/kernel
-    cd /build/kernel
-
-    # Note: User needs to provide the correct QNAP GPL source URL for their specific model
-    # This is a placeholder - actual URL depends on QNAP model and QTS version
-    if [ ! -f "kernel-source.tar.gz" ]; then
-        echo "WARNING: Kernel source not found!"
-        echo "Please download the QNAP GPL source for your specific model from:"
-        echo "https://sourceforge.net/projects/qosgpl/files/"
-        echo ""
-        echo "Place the kernel source archive as /build/kernel/kernel-source.tar.gz"
-        echo ""
-        echo "Or mount it using: docker run -v /path/to/kernel-source.tar.gz:/build/kernel/kernel-source.tar.gz"
-
-        # For testing, we'll download a generic x86 kernel
-        echo "Attempting to download generic Linux kernel ${KERNEL_VERSION}..."
-        wget -O kernel-source.tar.xz "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${KERNEL_VERSION}.tar.xz" || {
-            echo "Failed to download kernel source"
-            exit 1
-        }
-        tar -xf kernel-source.tar.xz
-        mv linux-${KERNEL_VERSION} linux-source
+    if [ -d "/build/kernel/linux-source" ]; then
+        echo "✓ Kernel source found (pre-downloaded in Docker image)"
+        echo "  Location: /build/kernel/linux-source"
+        echo "  Version: ${KERNEL_VERSION}"
     else
-        echo "Found existing kernel source, extracting..."
-        tar -xzf kernel-source.tar.gz
+        echo "ERROR: Kernel source not found!"
+        echo "The Docker image should have pre-downloaded kernel source."
+        echo "Please rebuild the Docker image: ./build.sh image"
+        exit 1
     fi
 }
 
-# Function to configure kernel
-configure_kernel() {
-    echo "[2/6] Configuring kernel..."
+# Function to prepare kernel (if custom config provided)
+prepare_kernel() {
+    echo "[2/6] Preparing kernel..."
 
     cd /build/kernel/linux-source
 
-    # If there's a custom config, use it; otherwise use defconfig
+    # If user provides custom config, re-prepare kernel
     if [ -f "/build/kernel/qnap_kernel.config" ]; then
         echo "Using custom QNAP kernel config..."
         cp /build/kernel/qnap_kernel.config .config
+        make ARCH=x86_64 scripts prepare modules_prepare
     else
-        echo "Using x86_64 defconfig..."
-        make ARCH=x86_64 defconfig
+        echo "✓ Using pre-configured kernel from Docker image"
     fi
-
-    # Prepare kernel for module compilation
-    echo "Preparing kernel for module build..."
-    make ARCH=x86_64 scripts prepare modules_prepare
 }
 
 # Function to download driver source
@@ -145,8 +125,8 @@ prepare_output() {
 
 # Main build process
 main() {
-    download_kernel_source
-    configure_kernel
+    verify_kernel_source
+    prepare_kernel
     download_driver_source
     patch_driver
     compile_driver
@@ -158,7 +138,7 @@ main() {
     echo "==================================="
     echo "Driver: /build/output/driver/r8152.ko"
     echo ""
-    echo "Next step: Run create_qpkg.sh to package the driver"
+    echo "Next step: Run create_qpkg_qdk.sh to package the driver"
 }
 
 # Run main function
