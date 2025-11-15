@@ -73,12 +73,17 @@ copy_driver() {
 set_permissions() {
     echo "[3/5] Setting permissions and updating version..."
 
-    # Update version in qpkg.cfg if DRIVER_VERSION is set
-    if [ -n "${DRIVER_VERSION}" ]; then
-        echo "Updating qpkg.cfg with version: ${DRIVER_VERSION}"
-        sed -i "s/^QPKG_VER=.*/QPKG_VER=\"${DRIVER_VERSION}\"/" "${QPKG_SOURCE}/qpkg.cfg"
+    # Update version in qpkg.cfg if QPKG_VERSION is set
+    if [ -n "${QPKG_VERSION}" ]; then
+        echo "Updating qpkg.cfg with QPKG version: ${QPKG_VERSION}"
+        sed -i "s/^QPKG_VER=.*/QPKG_VER=\"${QPKG_VERSION}\"/" "${QPKG_SOURCE}/qpkg.cfg"
     else
         echo "Using default version from qpkg.cfg"
+    fi
+
+    # Log driver version being packaged
+    if [ -n "${DRIVER_VERSION}" ]; then
+        echo "Packaging Realtek driver version: ${DRIVER_VERSION}"
     fi
 
     # Make scripts executable if they exist
