@@ -1,0 +1,23 @@
+# Build output
+output/
+
+# Docker build cache
+.docker/
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Claude cache
+.claude/
