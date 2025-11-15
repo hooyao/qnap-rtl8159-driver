@@ -102,7 +102,14 @@ quts_rtl/
 ├── Dockerfile              # Docker build environment (Ubuntu 20.04 + QDK)
 ├── build.sh               # Main orchestration script
 ├── build_driver.sh        # Driver compilation script
-├── create_qpkg_qdk.sh     # QPKG packaging with QDK
+├── build_qpkg.sh          # QPKG packaging script
+├── qpkg/                  # QPKG source template (version controlled)
+│   └── RTL8159_Driver/
+│       ├── icons/         # Package icons
+│       ├── shared/        # Shared files (scripts, web UI)
+│       ├── config/        # Configuration directory
+│       ├── qpkg.cfg       # Package metadata
+│       └── package_routines # Install/remove scripts
 ├── .gitignore            # Git ignore rules
 ├── README.md             # This file
 └── CLAUDE.md             # Development conversation log
@@ -126,13 +133,12 @@ Handles driver compilation:
 - Patches driver for compatibility
 - Compiles r8152.ko module
 
-#### 3. create_qpkg_qdk.sh
-Packages driver using QDK:
-- Creates QDK environment structure
-- Configures qpkg.cfg with version constraints
-- Copies compiled driver to architecture folders
-- Creates installation/removal scripts
+#### 3. build_qpkg.sh
+Packages driver using QDK template:
+- Uses pre-created template in qpkg/RTL8159_Driver/
+- Copies compiled driver to template
 - Builds QPKG with official qbuild tool
+- Icons and scripts are part of version-controlled template
 
 #### 4. build.sh
 Main orchestration:
@@ -187,6 +193,34 @@ DRIVER_VERSION=2.19.0 ./build.sh all
 Available driver versions can be found at:
 - https://github.com/wget/realtek-r8152-linux/tags
 
+### Package Icons
+
+Icons are included in the QPKG source template at `qpkg/RTL8159_Driver/icons/`.
+
+**Included Icons:**
+- `RTL8159_Driver.gif` (64x64) - Enabled state icon
+- `RTL8159_Driver_gray.gif` (64x64) - Disabled state icon
+- `RTL8159_Driver_80.gif` (80x80) - Dialog popup icon
+
+**Customizing Icons:**
+To use custom icons, replace the files in `qpkg/RTL8159_Driver/icons/` before building:
+
+```bash
+# Replace icon files in the template
+cp my-custom-icon.gif qpkg/RTL8159_Driver/icons/RTL8159_Driver.gif
+cp my-custom-icon-gray.gif qpkg/RTL8159_Driver/icons/RTL8159_Driver_gray.gif
+cp my-custom-icon-80.gif qpkg/RTL8159_Driver/icons/RTL8159_Driver_80.gif
+
+# Build with your custom icons
+./build.sh qpkg
+```
+
+**Icon Requirements:**
+- **Format**: GIF (preferred) or PNG (supported since QDK 2.2.15)
+- **Standard icons**: 64x64 pixels (RTL8159_Driver.gif, RTL8159_Driver_gray.gif)
+- **Dialog icon**: 80x80 pixels (RTL8159_Driver_80.gif)
+- Icons are version controlled and part of the QPKG template
+
 ### Custom Kernel Source
 
 If you have the official QNAP GPL kernel source:
@@ -216,7 +250,7 @@ Download QNAP GPL sources from: https://sourceforge.net/projects/qosgpl/files/
 
 # Inside the container:
 /build/build_driver.sh     # Compile driver manually
-/build/create_qpkg_qdk.sh  # Package manually
+/build/build_qpkg.sh       # Package manually
 ```
 
 ## Installation Details
@@ -261,7 +295,7 @@ The driver automatically loads at boot through the QPKG startup mechanism regist
 
 ### Via Command Line
 ```bash
-/sbin/qpkg_cli -r RTL8159_Driver
+/sbin/qpkg_cli -R RTL8159_Driver
 ```
 
 **What happens:**
@@ -362,11 +396,11 @@ Then rebuild:
 
 ### Modify QPKG Configuration
 
-Edit `create_qpkg_qdk.sh` around line 59-83 to change:
-- Package name
-- Version constraints
-- Display name
-- Etc.
+Edit `qpkg/RTL8159_Driver/qpkg.cfg` to change:
+- Package name and display name
+- Version constraints (QTS_MINI_VERSION, QTS_MAX_VERSION)
+- Package metadata (author, license, summary)
+- Web UI settings
 
 ## Technical Details
 
@@ -399,6 +433,58 @@ Edit `create_qpkg_qdk.sh` around line 59-83 to change:
 - [QNAP QDK](https://github.com/qnap-dev/QDK)
 - [QDK Quick Start Guide](https://cheng-yuan-hong.gitbook.io/qdk-quick-start-guide/)
 - [Linux Kernel Archives](https://kernel.org/)
+
+## GitHub Actions - Automated Releases
+
+This repository includes a GitHub Actions workflow that automatically builds and releases the QPKG when you push a tag starting with `release-`.
+
+### Creating a Release
+
+```bash
+# Tag the commit with a version
+git tag release-2.20.1b
+git push origin release-2.20.1b
+```
+
+The GitHub Actions workflow will:
+1. Build the Docker image
+2. Compile the driver
+3. Package the QPKG
+4. Create a GitHub release
+5. Upload the QPKG file as a release asset
+
+### Release Workflow Features
+
+- **Automatic builds**: Triggered by tags matching `release-*`
+- **Version extraction**: Extracts version from tag name (e.g., `release-2.20.1b` → `2.20.1b`)
+- **GitHub releases**: Creates a release with changelog and installation instructions
+- **Asset upload**: Uploads the built QPKG file to the release
+- **Build artifacts**: Stores build artifacts for 30 days
+
+### Workflow File
+
+The workflow is defined in [.github/workflows/release.yml](.github/workflows/release.yml).
+
+### Example Usage
+
+```bash
+# Make changes to your code
+git add .
+git commit -m "Update driver to version 2.20.1b"
+
+# Create a release tag
+git tag release-2.20.1b
+
+# Push the tag to trigger the workflow
+git push origin release-2.20.1b
+
+# GitHub Actions will:
+# - Build the QPKG automatically
+# - Create a GitHub release at: https://github.com/yourusername/quts_rtl/releases
+# - Upload RTL8159_Driver_2.20.1b_x86_64.qpkg to the release
+```
+
+Users can then download the QPKG directly from the GitHub releases page without needing to build it themselves.
 
 ## License
 

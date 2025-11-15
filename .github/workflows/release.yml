@@ -1,0 +1,102 @@
+name: Build and Release QPKG
+
+on:
+  push:
+    tags:
+      - 'release-*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          # Extract version from tag (e.g., release-2.20.1b -> 2.20.1b)
+          VERSION=${GITHUB_REF#refs/tags/release-}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t rtl8159-builder .
+
+      - name: Build driver and QPKG
+        run: |
+          # Run the build process inside the container
+          docker run --rm \
+            -v "$(pwd)/output:/output" \
+            rtl8159-builder \
+            /bin/bash -c "
+              cd /workspace && \
+              bash build_driver.sh && \
+              bash build_qpkg.sh && \
+              cp qpkg/*.qpkg /output/ || true
+            "
+
+      - name: List built artifacts
+        run: |
+          echo "Built artifacts:"
+          ls -lh output/
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: RTL8159 Driver ${{ steps.get_version.outputs.version }}
+          body: |
+            ## RTL8159 USB Ethernet Driver for QNAP
+
+            **Version**: ${{ steps.get_version.outputs.version }}
+            **Build Date**: ${{ github.event.head_commit.timestamp }}
+
+            ### Installation
+
+            1. Download the QPKG file for your architecture
+            2. Upload to QNAP App Center
+            3. Install the package
+            4. Verify installation: `lsmod | grep r8152`
+
+            ### Compatibility
+
+            - **QTS**: 4.2.0+
+            - **QuTS hero**: h5.2.0+
+            - **Architecture**: x86_64
+            - **Kernel**: 5.10.60
+
+            ### Changes
+
+            See commit history for detailed changes.
+
+            ---
+
+            Built automatically by GitHub Actions.
+          draft: false
+          prerelease: false
+
+      - name: Upload QPKG to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./output/RTL8159_Driver_${{ steps.get_version.outputs.version }}_x86_64.qpkg
+          asset_name: RTL8159_Driver_${{ steps.get_version.outputs.version }}_x86_64.qpkg
+          asset_content_type: application/octet-stream
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qpkg-packages
+          path: output/*.qpkg
+          retention-days: 30
