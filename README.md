@@ -1,5 +1,12 @@
 # RTL8159 10Gbps Driver Builder for QNAP NAS
 
+[![GitHub stars](https://img.shields.io/github/stars/hooyao/qnap-rtl8159-driver?style=social)](https://github.com/hooyao/qnap-rtl8159-driver/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/hooyao/qnap-rtl8159-driver?style=social)](https://github.com/hooyao/qnap-rtl8159-driver/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/hooyao/qnap-rtl8159-driver)](https://github.com/hooyao/qnap-rtl8159-driver/issues)
+[![GitHub license](https://img.shields.io/github/license/hooyao/qnap-rtl8159-driver)](https://github.com/hooyao/qnap-rtl8159-driver/blob/main/LICENSE)
+[![Docker](https://img.shields.io/badge/docker-enabled-blue.svg)](https://www.docker.com/)
+[![QNAP](https://img.shields.io/badge/QNAP-Compatible-green.svg)](https://www.qnap.com/)
+
 Automated build system for compiling and packaging the Realtek RTL8159 10Gbps USB Ethernet driver (r8152.ko) as a QPKG for QNAP NAS systems.
 
 ## Features
