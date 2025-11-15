@@ -69,7 +69,7 @@ make ARCH=x86_64 scripts prepare modules_prepare
 ```bash
 git clone https://github.com/wget/realtek-r8152-linux.git
 cd realtek-r8152-linux
-git checkout v2.17.1
+git checkout v2.20.1
 ```
 
 **Step 4**: Patch driver for compatibility
@@ -104,7 +104,7 @@ qbuild --create-env RTL8159_Driver
 **Step 2**: Configure qpkg.cfg
 ```bash
 QPKG_NAME="RTL8159_Driver"
-QPKG_VER="2.17.1"
+QPKG_VER="2.20.1"
 QTS_MINI_VERSION="4.2.0"
 QTS_MAX_VERSION="9.9.9"  # Critical: Support QuTS hero h5.x.x
 ```
@@ -137,7 +137,7 @@ pkg_post_install() {
 qbuild  # Creates multi-architecture QPKG packages
 ```
 
-**Result**: `RTL8159_Driver_2.17.1_x86_64.qpkg` (137KB)
+**Result**: `RTL8159_Driver_2.20.1_x86_64.qpkg` (137KB)
 
 ### Phase 4: QuTS Hero Compatibility
 
@@ -232,7 +232,7 @@ sed -i 's/strscpy/strlcpy/g' r8152.c
 │  │  │                                              │  │  │
 │  │  │  1. Download kernel 5.10.60 source          │  │  │
 │  │  │  2. Configure & prepare kernel              │  │  │
-│  │  │  3. Download r8152 driver v2.17.1           │  │  │
+│  │  │  3. Download r8152 driver v2.20.1           │  │  │
 │  │  │  4. Patch driver for compatibility          │  │  │
 │  │  │  5. Compile r8152.ko                        │  │  │
 │  │  │  6. Create QDK QPKG structure               │  │  │
@@ -243,7 +243,7 @@ sed -i 's/strscpy/strlcpy/g' r8152.c
 │  │              output/*.qpkg                         │  │
 │  └───────────────────────────────────────────────────┘  │
 │                       ↓                                  │
-│          RTL8159_Driver_2.17.1_x86_64.qpkg              │
+│          RTL8159_Driver_2.20.1_x86_64.qpkg              │
 └─────────────────────────────────────────────────────────┘
                         ↓
                   Install on QNAP
@@ -274,7 +274,7 @@ quts_rtl/
 
 ### Driver
 - **Module Name**: r8152.ko
-- **Version**: 2.17.1
+- **Version**: 2.20.1
 - **Source**: https://github.com/wget/realtek-r8152-linux
 - **Compiled Size**: ~619KB
 - **Supported Chips**: RTL8152/8153/8156/8157/8159 (up to 10Gbps)
@@ -287,7 +287,7 @@ quts_rtl/
 
 ### QPKG
 - **Name**: RTL8159_Driver
-- **Version**: 2.17.1
+- **Version**: 2.20.1
 - **Format**: QDK multi-archive structure
 - **Size**: ~137KB
 - **Compatibility**: QTS 4.2+ and QuTS hero h5.2+
@@ -304,7 +304,7 @@ On a typical development machine:
 ## Installation Flow
 
 ```
-User runs: sh RTL8159_Driver_2.17.1_x86_64.qpkg
+User runs: sh RTL8159_Driver_2.20.1_x86_64.qpkg
            │
            ├─→ Extract embedded archives
            │   ├─ control.tar.gz (qpkg.cfg, package_routines)
@@ -340,7 +340,7 @@ r8152                 81920  0
 # Check driver version
 $ modinfo r8152 | head -5
 filename:       /lib/modules/5.10.60/r8152.ko
-version:        v2.17.1
+version:        v2.20.1
 license:        GPL
 description:    Realtek RTL8152/RTL8153 Based USB Ethernet Adapters
 author:         Realtek linux nic maintainers <nic_swsd@realtek.com>

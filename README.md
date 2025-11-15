@@ -53,7 +53,7 @@ The build process will:
 4. Compile the r8152 driver module
 5. Package everything into a QPKG file
 
-**Output**: `output/RTL8159_Driver_2.17.1_x86_64.qpkg`
+**Output**: `output/RTL8159_Driver_2.20.1_x86_64.qpkg` (version is configurable)
 
 ### 2. Install on QNAP
 
@@ -69,12 +69,12 @@ The build process will:
 
 ```bash
 # Copy to NAS
-scp output/RTL8159_Driver_2.17.1_x86_64.qpkg admin@your-nas:/share/Public/
+scp output/RTL8159_Driver_2.20.1_x86_64.qpkg admin@your-nas:/share/Public/
 
 # SSH and install
 ssh admin@your-nas
 cd /share/Public
-sh RTL8159_Driver_2.17.1_x86_64.qpkg
+sh RTL8159_Driver_2.20.1_x86_64.qpkg
 ```
 
 ### 3. Verify Installation
@@ -122,7 +122,7 @@ Handles driver compilation:
 - Downloads Linux kernel 5.10.60 source
 - Configures kernel for x86_64
 - Prepares kernel headers
-- Downloads Realtek r8152 driver source (v2.17.1)
+- Downloads Realtek r8152 driver source (configurable version, default: 2.20.1)
 - Patches driver for compatibility
 - Compiles r8152.ko module
 
@@ -167,6 +167,25 @@ Main orchestration:
 ```
 
 ## Advanced Usage
+
+### Custom Driver Version
+
+You can build different driver versions by setting the `DRIVER_VERSION` environment variable:
+
+```bash
+# Build with a specific driver version
+DRIVER_VERSION=2.17.1 ./build.sh all
+DRIVER_VERSION=2.18.0 ./build.sh all
+DRIVER_VERSION=2.19.0 ./build.sh all
+
+# Default version (if not specified)
+./build.sh all  # Uses 2.20.1
+```
+
+**Output**: The QPKG filename will reflect the version, e.g., `RTL8159_Driver_2.19.0_x86_64.qpkg`
+
+Available driver versions can be found at:
+- https://github.com/wget/realtek-r8152-linux/tags
 
 ### Custom Kernel Source
 

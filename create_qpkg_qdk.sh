@@ -3,6 +3,7 @@ set -e
 
 # Configuration
 QPKG_NAME="RTL8159_Driver"
+DRIVER_VERSION="${DRIVER_VERSION:-2.20.1}"
 BUILD_DIR="/build"
 OUTPUT_DIR="${BUILD_DIR}/output"
 QPKG_BUILD_DIR="${OUTPUT_DIR}/qpkg_qdk"
@@ -55,11 +56,11 @@ configure_qpkg() {
 
     cd "${QPKG_BUILD_DIR}/${QPKG_NAME}"
 
-    # Create qpkg.cfg
-    cat > qpkg.cfg << 'EOF'
+    # Create qpkg.cfg with dynamic version
+    cat > qpkg.cfg << EOF
 QPKG_NAME="RTL8159_Driver"
 QPKG_DISPLAY_NAME="Realtek RTL8159/8152/8156/8157 USB Network Driver"
-QPKG_VER="2.17.1"
+QPKG_VER="${DRIVER_VERSION}"
 QPKG_AUTHOR="Custom Build"
 QPKG_LICENSE="GPL"
 QPKG_SUMMARY="Realtek RTL8159 USB Ethernet driver for 2.5G/5G adapters"
@@ -82,7 +83,7 @@ QPKG_CONFLICT=""
 QPKG_INCOMPATIBLE=""
 EOF
 
-    echo "QPKG configured"
+    echo "QPKG configured with version ${DRIVER_VERSION}"
 }
 
 # Function to copy driver files
