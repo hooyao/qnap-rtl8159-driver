@@ -1,6 +1,9 @@
 # Build output
 output/
 
+# QTS Kernel
+GPL_QTS/
+
 # QPKG build artifacts
 qpkg/RTL8159_Driver/build/
 qpkg/RTL8159_Driver/x86_64/r8152.ko
@@ -23,5 +26,14 @@ Thumbs.db
 .idea/
 *.iml
 
-# Claude cache
-.claude/
+# QNAP GPL Kernel Source (user-provided)
+gpl_source/*.tar.gz
+gpl_source/*.tar
+GPL_QTS/
+
+# Temporary files from GPL extraction
+QTS_Kernel_combined.tar.gz
+
+*sec.endpointdlp
+*Zone.Identifier
+

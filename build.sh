@@ -40,6 +40,42 @@ fi
 COMMAND="${1:-all}"
 KERNEL_SOURCE_PATH="${2:-}"
 
+# Function to check and prepare GPL source
+check_gpl_source() {
+    if [ ! -d "GPL_QTS/src/linux-5.10" ]; then
+        echo ""
+        echo "=========================================="
+        echo "QNAP GPL Kernel Source Required"
+        echo "=========================================="
+        echo ""
+        echo "GPL source not found. Checking for archives..."
+        echo ""
+
+        # Check if prepare script exists
+        if [ ! -f "prepare_gpl_source.sh" ]; then
+            echo "✗ Error: prepare_gpl_source.sh not found"
+            exit 1
+        fi
+
+        # Run preparation script
+        ./prepare_gpl_source.sh
+
+        # Verify it worked
+        if [ ! -d "GPL_QTS/src/linux-5.10" ]; then
+            echo ""
+            echo "✗ Error: GPL source preparation failed"
+            echo ""
+            echo "Please download GPL archives manually:"
+            echo "  1. Visit: https://sourceforge.net/projects/qosgpl/files/QNAP%20NAS%20GPL%20Source/QTS%205.2.3/"
+            echo "  2. Download both parts: QTS_Kernel_*.0.tar.gz and QTS_Kernel_*.1.tar.gz"
+            echo "  3. Place them in: gpl_source/"
+            echo "  4. Run: ./prepare_gpl_source.sh"
+            echo ""
+            exit 1
+        fi
+    fi
+}
+
 show_usage() {
     cat << EOF
 Usage: $0 [command] [kernel_source_path]
@@ -93,6 +129,21 @@ build_image() {
     echo "[Step 1/3] Building Docker image..."
     echo "=========================================="
 
+    # Verify GPL source before building image
+    if [ ! -d "GPL_QTS/src/linux-5.10" ]; then
+        echo "✗ ERROR: GPL source not found!"
+        echo ""
+        echo "The Dockerfile requires GPL_QTS/src/linux-5.10/ to exist."
+        echo "Docker build will fail at COPY instruction."
+        echo ""
+        echo "Please run: ./prepare_gpl_source.sh"
+        echo ""
+        exit 1
+    fi
+
+    echo "✓ GPL source verified: GPL_QTS/src/linux-5.10/"
+    echo ""
+
     docker build -t "${DOCKER_IMAGE}:${DOCKER_TAG}" .
 
     echo "Docker image built successfully: ${DOCKER_IMAGE}:${DOCKER_TAG}"
@@ -103,17 +154,11 @@ compile_driver() {
     echo ""
     echo "[Step 2/3] Compiling RTL8159 driver..."
     echo "=========================================="
+    echo "Using QNAP GPL kernel source from Docker image"
+    echo "  (copied from GPL_QTS/src/linux-5.10 during image build)"
 
     # Prepare volume mounts
     VOLUME_MOUNTS="-v $(pwd)/output:/build/output"
-
-    # If kernel source is provided, mount it
-    if [ -n "${KERNEL_SOURCE_PATH}" ] && [ -f "${KERNEL_SOURCE_PATH}" ]; then
-        echo "Using provided kernel source: ${KERNEL_SOURCE_PATH}"
-        VOLUME_MOUNTS="${VOLUME_MOUNTS} -v ${KERNEL_SOURCE_PATH}:/build/kernel/kernel-source.tar.gz"
-    else
-        echo "No kernel source provided - will download generic kernel"
-    fi
 
     # Remove old container if exists
     docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
@@ -259,6 +304,7 @@ interactive_shell() {
 # Main execution
 case "${COMMAND}" in
     all)
+        check_gpl_source
         build_image
         compile_driver
         create_qpkg
@@ -268,9 +314,11 @@ case "${COMMAND}" in
         echo "=========================================="
         ;;
     image)
+        check_gpl_source
         build_image
         ;;
     driver)
+        check_gpl_source
         compile_driver
         ;;
     qpkg)
@@ -280,6 +328,7 @@ case "${COMMAND}" in
         clean
         ;;
     shell)
+        check_gpl_source
         interactive_shell
         ;;
     help|--help|-h)

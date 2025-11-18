@@ -40,11 +40,22 @@ pkg_pre_install(){
 pkg_install(){
     log "=== Installation started ==="
 
-    # Determine architecture
+    # Determine architecture and find driver source
     ARCH=$(uname -m)
     case "$ARCH" in
         x86_64)
-            DRIVER_SRC="${QPKG_ROOT}/x86_64/${DRIVER_FILE}"
+            # QDK extracts architecture-specific files directly to QPKG_ROOT
+            # Check both possible locations for compatibility
+            if [ -f "${QPKG_ROOT}/${DRIVER_FILE}" ]; then
+                DRIVER_SRC="${QPKG_ROOT}/${DRIVER_FILE}"
+            elif [ -f "${QPKG_ROOT}/x86_64/${DRIVER_FILE}" ]; then
+                DRIVER_SRC="${QPKG_ROOT}/x86_64/${DRIVER_FILE}"
+            else
+                log "ERROR: Driver not found in ${QPKG_ROOT}/ or ${QPKG_ROOT}/x86_64/"
+                log "Contents of ${QPKG_ROOT}:"
+                ls -la "${QPKG_ROOT}" 2>&1 | while read line; do log "  $line"; done
+                return 1
+            fi
             ;;
         *)
             log "ERROR: Unsupported architecture: $ARCH"
@@ -56,7 +67,7 @@ pkg_install(){
     if [ -f "${DRIVER_SRC}" ]; then
         cp "${DRIVER_SRC}" "${MODULE_DIR}/"
         chmod 644 "${MODULE_DIR}/${DRIVER_FILE}"
-        log "Installed driver to ${MODULE_DIR}/"
+        log "Installed driver from ${DRIVER_SRC} to ${MODULE_DIR}/"
     else
         log "ERROR: Driver not found: ${DRIVER_SRC}"
         return 1
@@ -70,20 +81,121 @@ pkg_install(){
 pkg_post_install(){
     log "=== Post-installation started ==="
 
-    # Load driver
+    # Load driver (use forced reload to avoid cache issues)
     if [ -f "${MODULE_DIR}/${DRIVER_FILE}" ]; then
-        insmod "${MODULE_DIR}/${DRIVER_FILE}" 2>/dev/null || modprobe r8152 2>/dev/null || true
+        # CRITICAL: Clear module cache to prevent loading old cached module
+        log "Clearing module cache to force new driver load..."
+        rm -f "${MODULE_DIR}/modules.dep" 2>/dev/null || true
+        rm -f "${MODULE_DIR}/modules.dep.bin" 2>/dev/null || true
+        rm -f "${MODULE_DIR}/modules.alias" 2>/dev/null || true
+        rm -f "${MODULE_DIR}/modules.alias.bin" 2>/dev/null || true
+        rm -f "${MODULE_DIR}/modules.symbols" 2>/dev/null || true
+        rm -f "${MODULE_DIR}/modules.symbols.bin" 2>/dev/null || true
 
+        # Rebuild module dependencies with new driver
+        depmod -a 2>/dev/null || true
+        log "Module dependencies rebuilt"
+
+        # Unload any existing r8152 module completely
+        rmmod r8152 2>/dev/null || true
+        modprobe -r r8152 2>/dev/null || true
+        sleep 1
+
+        # Force load with insmod using absolute path (bypasses modprobe cache)
+        log "Force loading driver with insmod (absolute path)..."
+        if insmod "${MODULE_DIR}/${DRIVER_FILE}" 2>/dev/null; then
+            log "Driver loaded successfully via insmod (forced)"
+        # Fallback to modprobe if insmod fails
+        elif modprobe r8152 2>/dev/null; then
+            log "Driver loaded successfully via modprobe (fallback)"
+        else
+            # Log detailed error information
+            log "WARNING: Driver loading failed. Attempting diagnosis..."
+            log "Kernel version: $(uname -r)"
+            log "Module path: ${MODULE_DIR}/${DRIVER_FILE}"
+            log "Module exists: $([ -f "${MODULE_DIR}/${DRIVER_FILE}" ] && echo 'yes' || echo 'no')"
+            log "Module size: $(ls -lh "${MODULE_DIR}/${DRIVER_FILE}" 2>/dev/null | awk '{print $5}')"
+
+            # Try to get more error details
+            dmesg | tail -20 | grep -i "r8152\|rtl" | while read line; do
+                log "  dmesg: $line"
+            done 2>/dev/null || true
+        fi
+
+        # Verify driver is loaded and check size
         if lsmod | grep -q "^r8152 "; then
-            log "Driver loaded successfully"
+            MODULE_SIZE=$(cat /proc/modules | grep "^r8152 " | awk '{print $2}')
+            log "Driver verified loaded successfully (size: ${MODULE_SIZE} bytes)"
+
+            # Warn if module size is suspiciously small (old cached module)
+            if [ "${MODULE_SIZE}" -lt "350000" ]; then
+                log "WARNING: Module size (${MODULE_SIZE}) is smaller than expected (~390000)"
+                log "WARNING: Old module may be cached. Try manual reload:"
+                log "  sudo rmmod r8152"
+                log "  sudo rm -f /lib/modules/\$(uname -r)/modules.*"
+                log "  sudo depmod -a"
+                log "  sudo insmod ${MODULE_DIR}/${DRIVER_FILE}"
+            fi
 
             # Show driver info
             modinfo r8152 2>/dev/null | head -10 | while read line; do
                 log "  $line"
             done
         else
-            log "WARNING: Driver may not have loaded properly"
+            log "ERROR: Driver not loaded. Please check dmesg for errors."
+            log "Manual reload command:"
+            log "  sudo insmod ${MODULE_DIR}/${DRIVER_FILE}"
         fi
+    fi
+
+    # Configure auto-load on boot using QNAP's method with forced reload
+    # QNAP uses /etc/config/modules.conf or rc.local for boot scripts
+    AUTORUN_CONF="/etc/config/autorun.conf"
+    RC_LOCAL="/etc/rc.local"
+
+    # Create auto-load command that forces correct module
+    AUTOLOAD_CMD="rm -f ${MODULE_DIR}/modules.* 2>/dev/null; depmod -a 2>/dev/null; insmod ${MODULE_DIR}/${DRIVER_FILE} 2>/dev/null || modprobe r8152 2>/dev/null"
+
+    # Method 1: Try to add to rc.local if it exists and is writable
+    if [ -f "${RC_LOCAL}" ] && [ -w "${RC_LOCAL}" ]; then
+        # Check if our entry already exists
+        if ! grep -q "RTL8159 Driver auto-load" "${RC_LOCAL}"; then
+            # Add before the last line (usually 'exit 0') with forced reload
+            sed -i "/^exit 0/i # RTL8159 Driver auto-load (with cache clear)\n${AUTOLOAD_CMD}" "${RC_LOCAL}" 2>/dev/null && \
+                log "Auto-load on boot configured: ${RC_LOCAL} (with forced reload)" || \
+                log "WARNING: Could not modify ${RC_LOCAL}"
+        else
+            log "Auto-load already configured in ${RC_LOCAL}"
+        fi
+    # Method 2: Try QNAP's autorun.conf if it exists
+    elif [ -f "${AUTORUN_CONF}" ] && [ -w "${AUTORUN_CONF}" ]; then
+        if ! grep -q "RTL8159 Driver" "${AUTORUN_CONF}"; then
+            echo "${AUTOLOAD_CMD} # RTL8159 Driver (forced reload)" >> "${AUTORUN_CONF}" && \
+                log "Auto-load on boot configured: ${AUTORUN_CONF} (with forced reload)" || \
+                log "WARNING: Could not modify ${AUTORUN_CONF}"
+        else
+            log "Auto-load already configured in ${AUTORUN_CONF}"
+        fi
+    else
+        # Method 3: Create our own init script with forced reload
+        INIT_SCRIPT="${QPKG_ROOT}/rtl8159-autoload.sh"
+        cat > "${INIT_SCRIPT}" << EOFSCRIPT
+#!/bin/sh
+# RTL8159 Driver auto-load script with forced reload
+# This script clears module cache and force-loads the driver
+
+# Clear module cache
+rm -f ${MODULE_DIR}/modules.* 2>/dev/null
+
+# Rebuild dependencies
+depmod -a 2>/dev/null
+
+# Force load with insmod (absolute path)
+insmod ${MODULE_DIR}/${DRIVER_FILE} 2>/dev/null || modprobe r8152 2>/dev/null || true
+EOFSCRIPT
+        chmod +x "${INIT_SCRIPT}"
+        log "Created auto-load script with forced reload: ${INIT_SCRIPT}"
+        log "Note: Driver will auto-load via QPKG service on boot"
     fi
 
     log "=== Installation completed successfully ==="
@@ -91,8 +203,19 @@ pkg_post_install(){
     echo "=========================================="
     echo "RTL8159 Driver installed!"
     echo "=========================================="
+    echo "Features enabled:"
+    echo "  - S5 Wake-on-LAN support"
+    echo "  - Auto-load on boot"
     echo "Log: ${LOG_FILE}"
-    echo "Please reconnect your USB Ethernet adapter"
+    echo ""
+    if lsmod | grep -q "^r8152 "; then
+        echo "Status: Driver loaded successfully"
+        echo "Please reconnect your USB Ethernet adapter"
+    else
+        echo "Status: Driver installed but not loaded"
+        echo "Please run: modprobe r8152"
+        echo "Or check: ${LOG_FILE}"
+    fi
     echo "=========================================="
 }
 
@@ -135,6 +258,33 @@ PKG_MAIN_REMOVE="{
 
 PKG_POST_REMOVE="{
     log \"=== Post-removal started ===\"
+
+    # Remove auto-load configuration from various locations
+    RC_LOCAL=\"/etc/rc.local\"
+    AUTORUN_CONF=\"/etc/config/autorun.conf\"
+
+    # Remove from rc.local if it exists
+    if [ -f \"${RC_LOCAL}\" ] && [ -w \"${RC_LOCAL}\" ]; then
+        if grep -q \"RTL8159 Driver auto-load\" \"${RC_LOCAL}\"; then
+            sed -i '/# RTL8159 Driver auto-load/d' \"${RC_LOCAL}\"
+            sed -i '/modprobe r8152.*RTL8159/d' \"${RC_LOCAL}\"
+            log \"Removed auto-load from ${RC_LOCAL}\"
+        fi
+    fi
+
+    # Remove from autorun.conf if it exists
+    if [ -f \"${AUTORUN_CONF}\" ] && [ -w \"${AUTORUN_CONF}\" ]; then
+        if grep -q \"RTL8159 Driver\" \"${AUTORUN_CONF}\"; then
+            sed -i '/modprobe r8152.*RTL8159/d' \"${AUTORUN_CONF}\"
+            log \"Removed auto-load from ${AUTORUN_CONF}\"
+        fi
+    fi
+
+    # Remove our init script if it exists
+    if [ -f \"${QPKG_ROOT}/rtl8159-autoload.sh\" ]; then
+        rm -f \"${QPKG_ROOT}/rtl8159-autoload.sh\"
+        log \"Removed auto-load script\"
+    fi
 
     # Try to reload original driver if available
     if [ -f \"${MODULE_DIR}/${DRIVER_FILE}\" ]; then

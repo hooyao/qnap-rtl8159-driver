@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:gist.github.com)",
+      "Bash(chmod:*)",
+      "Bash(docker build:*)",
+      "Bash(./build.sh:*)",
+      "WebFetch(domain:cheng-yuan-hong.gitbook.io)",
+      "Bash(docker run --rm rtl8159-builder /bin/bash -c \"ls -la /opt/QDK/ && which qbuild\")",
+      "Bash(docker run:*)",
+      "Bash(bash -c 'ARCHIVE_LINE=$(awk \"\"/^__ARCHIVE_BELOW__$/ {print NR + 1; exit 0; }\"\" RTL8159_Driver_2.17.1_x86_64.qpkg) && tail -n +${ARCHIVE_LINE} RTL8159_Driver_2.17.1_x86_64.qpkg | tar -tzf - | head -20')",
+      "Bash(cat:*)",
+      "WebSearch",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(tee:*)",
+      "Bash(tree:*)",
+      "Bash(git fetch:*)",
+      "Bash(identify:*)",
+      "Bash(mkdir:*)",
+      "Bash(git:*)",
+      "Bash(modinfo:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

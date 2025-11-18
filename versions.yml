@@ -1,24 +1,41 @@
 # Version configuration for RTL8159 Driver QPKG
-# This file controls the versions used during the build process
+# This file controls all versions and GPL sources used during the build process
 
 # Realtek driver version to download and compile
 # This should match an actual release tag from:
 # https://github.com/wget/realtek-r8152-linux/releases
 driver_version: "2.20.1"
 
-# Target kernel version for compilation
-# This should match the kernel version on your QNAP device
-# Check with: uname -r
-kernel_version: "5.10.60"
+# QNAP GPL Kernel Source Configuration
+# The GPL source is distributed as split archives that must be concatenated
+# List the URLs in order - they will be downloaded and combined automatically
+gpl_source:
+  # QTS/QuTS hero 5.2.3 (kernel 5.10.60-qnap)
+  kernel_version: "5.10.60"
+  qts_version: "5.2.3"
+  build_date: "20250218"
+
+  # Split archive URLs (must be in correct order for concatenation)
+  urls:
+    - "https://master.dl.sourceforge.net/project/qosgpl/QNAP%20NAS%20GPL%20Source/QTS%205.2.3/QTS_Kernel_5.2.3.20250218.0.tar.gz?viasf=1"
+    - "https://master.dl.sourceforge.net/project/qosgpl/QNAP%20NAS%20GPL%20Source/QTS%205.2.3/QTS_Kernel_5.2.3.20250218.1.tar.gz?viasf=1"
+
+  # Alternative: Single archive (if QNAP provides non-split version)
+  # urls:
+  #   - "https://path/to/single/archive.tar.gz"
+
+# Model-specific kernel configuration
+# This is the subdirectory under GPL_QTS/kernel_cfg/ to use
+target_model: "TS-X65U"
 
 # Notes:
 # - driver_version: Must match a valid Realtek release tag
-# - kernel_version: Must match your QNAP kernel (check with uname -r)
+# - gpl_source.urls: Can be 1 or more URLs - will be concatenated in order
+# - target_model: Must match a directory in GPL_QTS/kernel_cfg/
 # - qpkg_version: Derived from git tag (e.g., release-5.55.1b1 -> 5.55.1b1)
-#                 QPKG version is independent of driver version
-#                 It represents the package release version
 #
 # Example:
 # - driver_version: 2.20.1 (actual Realtek driver)
+# - gpl_source.kernel_version: 5.10.60 (QNAP kernel)
 # - git tag: release-5.55.1b1
 # - Result: QPKG contains driver 2.20.1, packaged as version 5.55.1b1
