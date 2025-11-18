@@ -50,32 +50,38 @@ gpl_source:
 
 ### 2. Module Cache Issue (CRITICAL FIX)
 
-**Problem**: System loads old cached module (229KB) instead of new one (391KB)
+**Problem**: System loads old module instead of new one from QPKG
 
 **Root Cause**:
-- `modprobe r8152` uses module cache (`/lib/modules/*/modules.dep`, etc.)
-- Cache contains stale references to old module
-- New 391KB module installed but old 229KB module loads
+- `/lib/modules` is READ-ONLY on QNAP systems
+- Trying to copy driver there fails silently
+- After reboot, old driver loads from read-only filesystem
 
 **Solution** (implemented in `package_routines`):
 ```bash
-# Clear ALL cache files
-rm -f ${MODULE_DIR}/modules.dep* modules.alias* modules.symbols*
+# Keep driver in QPKG directory (on writable data volume)
+DRIVER_PATH="${QPKG_ROOT}/${DRIVER_FILE}"
 
-# Rebuild dependencies
-depmod -a
+# Unload old module
+rmmod r8152
 
-# Force load with insmod (bypasses cache!)
-insmod ${MODULE_DIR}/r8152.ko
+# Load from QPKG directory (bypasses /lib/modules entirely)
+insmod ${DRIVER_PATH}
 
-# Verify size
-MODULE_SIZE=$(cat /proc/modules | grep "^r8152 " | awk '{print $2}')
-if [ "$MODULE_SIZE" -lt "350000" ]; then
-    # Warn user - wrong module loaded
+# Verify using srcversion (NOT size!)
+LOADED_SRC=$(cat /sys/module/r8152/srcversion)
+FILE_SRC=$(strings ${DRIVER_PATH} | grep "^srcversion=" | cut -d= -f2)
+if [ "$LOADED_SRC" = "$FILE_SRC" ]; then
+    # Correct module loaded
 fi
 ```
 
-**Why insmod works**: Loads exact file specified, ignores module alias cache.
+**Why this works**:
+- Driver loads from persistent data volume
+- Uses `insmod` with absolute path
+- Verifies using srcversion (unique identifier), not size
+
+**IMPORTANT**: Runtime module size in `/proc/modules` (~294KB) is DIFFERENT from file size (~391KB). This is normal - kernel strips debug symbols. Use `srcversion` to verify!
 
 ### 3. Build System Architecture
 
@@ -201,18 +207,40 @@ target_model: "TS-X65U"  # Kernel config directory
 
 ## Troubleshooting Guide
 
-### Issue: Wrong Module Size (229KB not 391KB)
+### Issue: How to Verify Correct Module is Loaded
 
-**Symptom**: `cat /proc/modules | grep r8152` shows size ~229000
+**IMPORTANT**: `/proc/modules` shows runtime memory size, NOT file size!
+- File size: ~391KB (399848 bytes)
+- Runtime size: ~288KB (294912 bytes) - this is NORMAL
 
-**Cause**: Old module cached
+**Correct way to verify**:
+```bash
+# 1. Get srcversion from loaded module
+LOADED_SRC=$(cat /sys/module/r8152/srcversion)
+echo "Loaded module srcversion: $LOADED_SRC"
 
-**Fix** (automatic in installer, manual if needed):
+# 2. Get srcversion from QPKG driver file
+QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
+FILE_SRC=$(strings "$QPKG_PATH/r8152.ko" | grep "^srcversion=" | cut -d= -f2)
+echo "QPKG driver srcversion: $FILE_SRC"
+
+# 3. Compare - they should match!
+if [ "$LOADED_SRC" = "$FILE_SRC" ]; then
+    echo "✓ Correct module loaded!"
+else
+    echo "✗ Wrong module loaded!"
+fi
+
+# To get srcversion from build output:
+strings output/driver/r8152.ko | grep "^srcversion="
+```
+
+**Wrong way**: Comparing `/proc/modules` size to file size (they will always differ)
+
+**Fix if wrong module loaded**:
 ```bash
 sudo rmmod r8152
-sudo rm -f /lib/modules/$(uname -r)/modules.*
-sudo depmod -a
-sudo insmod /lib/modules/5.10.60-qnap/r8152.ko
+sudo insmod /share/ZFSXXX_DATA/.qpkg/RTL8159_Driver/r8152.ko
 ```
 
 ### Issue: "Unknown symbol" Errors
@@ -238,13 +266,17 @@ strings /lib/modules/*/r8152.ko | grep vermagic
 # 1. Check module loaded
 lsmod | grep r8152
 
-# 2. Check module size
-cat /proc/modules | grep r8152
-# Should be ~400000, not 229376
+# 2. Verify CORRECT module is loaded (compare srcversions)
+LOADED_SRC=$(cat /sys/module/r8152/srcversion)
+QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
+FILE_SRC=$(strings "$QPKG_PATH/r8152.ko" | grep "^srcversion=" | cut -d= -f2)
+echo "Loaded: $LOADED_SRC"
+echo "QPKG:   $FILE_SRC"
+[ "$LOADED_SRC" = "$FILE_SRC" ] && echo "✓ Match!" || echo "✗ Mismatch!"
 
-# 3. Check device IDs in module
-strings /lib/modules/*/r8152.ko | grep 815a
-# Should return results
+# 3. Check module version
+cat /sys/module/r8152/version
+# Should be: v2.20.1 (2025/05/13)
 
 # 4. Check USB device
 lsusb | grep 0bda:815a
@@ -254,9 +286,11 @@ dmesg | tail -30 | grep r8152
 ```
 
 **Fix order**:
-1. If size wrong → Clear cache and reload (see above)
-2. If no 815a IDs → Rebuild with patching
-3. If USB not recognized → Check cable/port
+1. If wrong srcversion → Reload from QPKG directory (see above)
+2. If USB not recognized → Check dmesg for errors
+3. If no interface created → Check cable/port
+
+**IMPORTANT**: Don't check module size! Runtime size (~294KB) differs from file size (~391KB).
 
 ### Issue: Build Fails "GPL source not found"
 
@@ -382,15 +416,17 @@ COPY GPL_QTS/kernel_cfg/TS-X73/linux-5.10-x86_64.config /build/kernel/
 - [ ] QPKG created: `ls output/*.qpkg` (~126KB)
 - [ ] Driver compiled: `ls output/driver/r8152.ko` (~391KB)
 - [ ] Driver version: `strings output/driver/r8152.ko | grep "v2.20"`
+- [ ] Driver srcversion: `strings output/driver/r8152.ko | grep "^srcversion="`
 - [ ] Device IDs present: `strings output/driver/r8152.ko | grep 815a`
 
 ### Post-Install (on QNAP)
 - [ ] Module loaded: `lsmod | grep r8152`
-- [ ] Correct size: `cat /proc/modules | grep r8152` (~400000)
+- [ ] Correct module: Compare `cat /sys/module/r8152/srcversion` with `strings /path/to/r8152.ko | grep "^srcversion="`
 - [ ] USB detected: `lsusb | grep 0bda:815a`
 - [ ] Interface created: `ip link show` (new ethX)
 - [ ] No errors: `dmesg | grep r8152`
 - [ ] Survives reboot: Auto-loads after reboot
+- [ ] Note: Runtime size (~294KB) is NORMAL, don't check size!
 
 ---
 
@@ -457,12 +493,14 @@ Don't waste time trying to:
 
 ### Success Metrics
 
-- ✅ Driver compiles: 391KB r8152.ko
+- ✅ Driver compiles: 391KB r8152.ko file
 - ✅ Module loads: `lsmod | grep r8152`
-- ✅ Size correct: ~400000 bytes in /proc/modules
+- ✅ Correct module: srcversion matches QPKG driver file
+- ✅ Version correct: v2.20.1 (2025/05/13)
 - ✅ Device detects: USB device → ethX interface
 - ✅ Network works: Can ping/transfer data
 - ✅ Survives reboot: Auto-loads on boot
+- ⚠️ Runtime size: ~294KB in /proc/modules (NORMAL, don't check this!)
 
 ---
 

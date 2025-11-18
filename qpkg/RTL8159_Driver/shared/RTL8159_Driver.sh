@@ -12,15 +12,18 @@ case "$1" in
         exit 1
     fi
 
-    # Load driver on startup if not already loaded
-    if ! lsmod | grep -q "^r8152 "; then
-        echo "Loading r8152 driver..."
-        modprobe r8152 2>/dev/null || insmod /lib/modules/$(uname -r)/r8152.ko 2>/dev/null || true
-    fi
+    # Load driver from QPKG directory on startup
+    DRIVER_PATH="${QPKG_ROOT}/r8152.ko"
 
-    # Check if auto-load script exists and run it
-    if [ -f "${QPKG_ROOT}/rtl8159-autoload.sh" ]; then
-        "${QPKG_ROOT}/rtl8159-autoload.sh"
+    if [ -f "${DRIVER_PATH}" ]; then
+        # Unload old module if loaded
+        if lsmod | grep -q "^r8152 "; then
+            rmmod r8152 2>/dev/null || true
+        fi
+
+        # Load driver from QPKG directory
+        echo "Loading r8152 driver from QPKG directory..."
+        insmod "${DRIVER_PATH}" 2>/dev/null || true
     fi
 
     if lsmod | grep -q "^r8152 "; then

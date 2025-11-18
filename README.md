@@ -176,39 +176,51 @@ sudo sh RTL8159_Driver_2.20.1_x86_64.qpkg
 ✅ **Good News**: The installer now **automatically** handles module cache clearing and force-loads the correct driver using `insmod`. The driver should work immediately after installation!
 
 **What the installer does automatically:**
-1. Clears old module cache files
-2. Rebuilds module dependencies
-3. Force-loads the new driver with `insmod` (bypasses cache)
-4. Verifies the correct module size (~400KB, not 229KB)
-5. Warns if old module is detected
+1. Keeps driver in QPKG directory (bypasses read-only `/lib/modules`)
+2. Unloads old driver from memory
+3. Force-loads the new driver with `insmod` from QPKG directory
+4. Verifies the correct module using srcversion (NOT size!)
+5. Sets up auto-load on boot
 
 ### 4. Manual Verification & Troubleshooting
 
 If you want to verify or experience issues:
 
 ```bash
-# Check driver version (should be v2.20.1)
-strings /lib/modules/5.10.60-qnap/r8152.ko | grep "version=v"
+# IMPORTANT: Check module using srcversion (NOT size!)
+# Runtime size in /proc/modules (~294KB) differs from file size (~391KB)
 
-# Check if RTL8159 support is present
-strings /lib/modules/5.10.60-qnap/r8152.ko | grep "815a"
+# 1. Check if module is loaded
+lsmod | grep r8152
 
-# Check USB device detected
+# 2. Verify CORRECT module by comparing srcversions
+LOADED_SRC=$(cat /sys/module/r8152/srcversion)
+QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
+FILE_SRC=$(strings "$QPKG_PATH/r8152.ko" | grep "^srcversion=" | cut -d= -f2)
+echo "Loaded module: $LOADED_SRC"
+echo "QPKG driver:   $FILE_SRC"
+[ "$LOADED_SRC" = "$FILE_SRC" ] && echo "✓ Correct module!" || echo "✗ Wrong module!"
+
+# 3. Check module version
+cat /sys/module/r8152/version
+# Should be: v2.20.1 (2025/05/13)
+
+# 4. Check USB device detected
 lsusb | grep Realtek
 
-# Check network interface created
+# 5. Check network interface created
 ip link show
 # Should show new interface (eth2, eth3, etc.)
 
-# Check kernel messages
+# 6. Check kernel messages
 dmesg | tail -20 | grep r8152
 # Should show device initialization, no errors
 ```
 
 **Expected results**:
-- Module size: ~400000 bytes (NOT 229KB!)
+- Loaded srcversion matches QPKG driver srcversion ✓
 - Version: v2.20.1 (2025/05/13)
-- RTL8159 (815a) device IDs present
+- Runtime size: ~294KB (NORMAL - ignore this!)
 - Network interface appears after USB plug-in
 
 ---
@@ -361,17 +373,30 @@ sed -i '/USB_DEVICE(VENDOR_ID_REALTEK, 0x815a)/a\
 
 ## Troubleshooting
 
-### Module Shows Wrong Size (229KB instead of 391KB)
+### Wrong Module Loaded After Reboot
 
-**Problem**: Old module cached by system
+**Problem**: Old module loads instead of QPKG driver
+
+**Check**: Compare srcversions (NOT sizes!)
+```bash
+# Get loaded module srcversion
+cat /sys/module/r8152/srcversion
+
+# Get QPKG driver srcversion
+QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
+strings "$QPKG_PATH/r8152.ko" | grep "^srcversion="
+
+# They should match!
+```
 
 **Solution**:
 ```bash
+QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
 sudo rmmod r8152
-sudo rm -f /lib/modules/$(uname -r)/modules.*
-sudo depmod -a
-sudo insmod /lib/modules/5.10.60-qnap/r8152.ko
+sudo insmod "$QPKG_PATH/r8152.ko"
 ```
+
+**Note**: Runtime size in `/proc/modules` (~294KB) is DIFFERENT from file size (~391KB). This is normal!
 
 ### "version magic ... should be ..." Error
 
@@ -405,11 +430,14 @@ dmesg | grep "Unknown symbol"
 # 1. Check driver loaded
 lsmod | grep r8152
 
-# 2. Check module size (should be ~400000)
-cat /proc/modules | grep r8152
+# 2. Verify correct module (compare srcversions)
+LOADED_SRC=$(cat /sys/module/r8152/srcversion)
+QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
+FILE_SRC=$(strings "$QPKG_PATH/r8152.ko" | grep "^srcversion=" | cut -d= -f2)
+echo "Match: $([ "$LOADED_SRC" = "$FILE_SRC" ] && echo YES || echo NO)"
 
-# 3. Check RTL8159 support in module
-strings /lib/modules/*/r8152.ko | grep 815a
+# 3. Check module version
+cat /sys/module/r8152/version
 
 # 4. Check USB device recognized
 lsusb | grep 0bda:815a
@@ -419,8 +447,8 @@ dmesg | tail -30 | grep r8152
 ```
 
 **Solutions**:
-1. If module size wrong (229KB): Clear cache and reload (see above)
-2. If no 815a support: Rebuild with device ID patching
+1. If srcversion mismatch: Reload from QPKG directory (see above)
+2. If wrong version: Reinstall QPKG
 3. If USB not recognized: Try different USB port, check cable
 
 ### Build Failures
@@ -569,7 +597,7 @@ This is an unofficial build. Test thoroughly before using in production. Always 
 2. Check kernel messages: `dmesg | grep r8152`
 3. Verify kernel version: `uname -r` (should be 5.10.60-qnap)
 4. Verify architecture: `uname -m` (should be x86_64)
-5. Verify module size: `cat /proc/modules | grep r8152` (should be ~400000)
+5. Verify correct module: Compare srcversions (see troubleshooting above)
 
 ---
 

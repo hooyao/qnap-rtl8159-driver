@@ -40,16 +40,18 @@ pkg_pre_install(){
 pkg_install(){
     log "=== Installation started ==="
 
-    # Determine architecture and find driver source
+    # Determine architecture and verify driver exists
     ARCH=$(uname -m)
     case "$ARCH" in
         x86_64)
             # QDK extracts architecture-specific files directly to QPKG_ROOT
             # Check both possible locations for compatibility
             if [ -f "${QPKG_ROOT}/${DRIVER_FILE}" ]; then
-                DRIVER_SRC="${QPKG_ROOT}/${DRIVER_FILE}"
+                log "Driver found in QPKG directory: ${QPKG_ROOT}/${DRIVER_FILE}"
             elif [ -f "${QPKG_ROOT}/x86_64/${DRIVER_FILE}" ]; then
-                DRIVER_SRC="${QPKG_ROOT}/x86_64/${DRIVER_FILE}"
+                # Move to root for consistency
+                mv "${QPKG_ROOT}/x86_64/${DRIVER_FILE}" "${QPKG_ROOT}/"
+                log "Driver moved from x86_64/ to QPKG root"
             else
                 log "ERROR: Driver not found in ${QPKG_ROOT}/ or ${QPKG_ROOT}/x86_64/"
                 log "Contents of ${QPKG_ROOT}:"
@@ -63,17 +65,11 @@ pkg_install(){
             ;;
     esac
 
-    # Copy driver
-    if [ -f "${DRIVER_SRC}" ]; then
-        cp "${DRIVER_SRC}" "${MODULE_DIR}/"
-        chmod 644 "${MODULE_DIR}/${DRIVER_FILE}"
-        log "Installed driver from ${DRIVER_SRC} to ${MODULE_DIR}/"
-    else
-        log "ERROR: Driver not found: ${DRIVER_SRC}"
-        return 1
-    fi
+    # NOTE: /lib/modules is often read-only on QNAP systems
+    # We keep the driver in QPKG directory and load from there
+    log "Driver will be loaded from QPKG directory (read-only /lib/modules)"
 
-    # Update module dependencies
+    # Update module dependencies (in case other modules need to be updated)
     depmod -a 2>/dev/null || true
     log "Updated module dependencies"
 }
@@ -81,71 +77,74 @@ pkg_install(){
 pkg_post_install(){
     log "=== Post-installation started ==="
 
-    # Load driver (use forced reload to avoid cache issues)
-    if [ -f "${MODULE_DIR}/${DRIVER_FILE}" ]; then
-        # CRITICAL: Clear module cache to prevent loading old cached module
-        log "Clearing module cache to force new driver load..."
-        rm -f "${MODULE_DIR}/modules.dep" 2>/dev/null || true
-        rm -f "${MODULE_DIR}/modules.dep.bin" 2>/dev/null || true
-        rm -f "${MODULE_DIR}/modules.alias" 2>/dev/null || true
-        rm -f "${MODULE_DIR}/modules.alias.bin" 2>/dev/null || true
-        rm -f "${MODULE_DIR}/modules.symbols" 2>/dev/null || true
-        rm -f "${MODULE_DIR}/modules.symbols.bin" 2>/dev/null || true
+    # Load driver from QPKG directory (not /lib/modules which is read-only on QNAP)
+    DRIVER_PATH="${QPKG_ROOT}/${DRIVER_FILE}"
 
-        # Rebuild module dependencies with new driver
-        depmod -a 2>/dev/null || true
-        log "Module dependencies rebuilt"
+    if [ -f "${DRIVER_PATH}" ]; then
+        log "Driver path: ${DRIVER_PATH}"
+        log "Driver size: $(ls -lh "${DRIVER_PATH}" 2>/dev/null | awk '{print $5}')"
 
         # Unload any existing r8152 module completely
-        rmmod r8152 2>/dev/null || true
-        modprobe -r r8152 2>/dev/null || true
-        sleep 1
+        if lsmod | grep -q "^r8152 "; then
+            log "Unloading existing r8152 module..."
+            rmmod r8152 2>/dev/null || true
+            sleep 1
+        fi
 
-        # Force load with insmod using absolute path (bypasses modprobe cache)
-        log "Force loading driver with insmod (absolute path)..."
-        if insmod "${MODULE_DIR}/${DRIVER_FILE}" 2>/dev/null; then
-            log "Driver loaded successfully via insmod (forced)"
-        # Fallback to modprobe if insmod fails
-        elif modprobe r8152 2>/dev/null; then
-            log "Driver loaded successfully via modprobe (fallback)"
+        # Force load with insmod using absolute path from QPKG directory
+        # This bypasses the module system and /lib/modules entirely
+        log "Loading driver directly from QPKG directory with insmod..."
+        if insmod "${DRIVER_PATH}" 2>/dev/null; then
+            log "Driver loaded successfully via insmod from QPKG directory"
         else
             # Log detailed error information
-            log "WARNING: Driver loading failed. Attempting diagnosis..."
+            log "ERROR: Driver loading failed"
             log "Kernel version: $(uname -r)"
-            log "Module path: ${MODULE_DIR}/${DRIVER_FILE}"
-            log "Module exists: $([ -f "${MODULE_DIR}/${DRIVER_FILE}" ] && echo 'yes' || echo 'no')"
-            log "Module size: $(ls -lh "${MODULE_DIR}/${DRIVER_FILE}" 2>/dev/null | awk '{print $5}')"
 
             # Try to get more error details
             dmesg | tail -20 | grep -i "r8152\|rtl" | while read line; do
                 log "  dmesg: $line"
             done 2>/dev/null || true
+
+            log "Manual reload command:"
+            log "  sudo insmod ${DRIVER_PATH}"
         fi
 
-        # Verify driver is loaded and check size
+        # Verify driver is loaded using srcversion (NOT size!)
         if lsmod | grep -q "^r8152 "; then
-            MODULE_SIZE=$(cat /proc/modules | grep "^r8152 " | awk '{print $2}')
-            log "Driver verified loaded successfully (size: ${MODULE_SIZE} bytes)"
+            log "Driver module is loaded"
 
-            # Warn if module size is suspiciously small (old cached module)
-            if [ "${MODULE_SIZE}" -lt "350000" ]; then
-                log "WARNING: Module size (${MODULE_SIZE}) is smaller than expected (~390000)"
-                log "WARNING: Old module may be cached. Try manual reload:"
-                log "  sudo rmmod r8152"
-                log "  sudo rm -f /lib/modules/\$(uname -r)/modules.*"
-                log "  sudo depmod -a"
-                log "  sudo insmod ${MODULE_DIR}/${DRIVER_FILE}"
+            # Get srcversion to verify correct module
+            LOADED_SRC=$(cat /sys/module/r8152/srcversion 2>/dev/null)
+            FILE_SRC=$(strings "${DRIVER_PATH}" 2>/dev/null | grep "^srcversion=" | cut -d= -f2)
+
+            if [ -n "${LOADED_SRC}" ] && [ -n "${FILE_SRC}" ]; then
+                if [ "${LOADED_SRC}" = "${FILE_SRC}" ]; then
+                    log "SUCCESS: Correct module verified (srcversion: ${LOADED_SRC})"
+                else
+                    log "WARNING: Different module loaded!"
+                    log "  Expected srcversion: ${FILE_SRC}"
+                    log "  Loaded srcversion: ${LOADED_SRC}"
+                    log "Manual reload command:"
+                    log "  sudo rmmod r8152"
+                    log "  sudo insmod ${DRIVER_PATH}"
+                fi
+            else
+                log "INFO: Cannot verify srcversion (may not be available)"
             fi
 
-            # Show driver info
-            modinfo r8152 2>/dev/null | head -10 | while read line; do
-                log "  $line"
-            done
+            # Show module version
+            MODULE_VER=$(cat /sys/module/r8152/version 2>/dev/null)
+            if [ -n "${MODULE_VER}" ]; then
+                log "Module version: ${MODULE_VER}"
+            fi
         else
             log "ERROR: Driver not loaded. Please check dmesg for errors."
             log "Manual reload command:"
-            log "  sudo insmod ${MODULE_DIR}/${DRIVER_FILE}"
+            log "  sudo insmod ${DRIVER_PATH}"
         fi
+    else
+        log "ERROR: Driver file not found at ${DRIVER_PATH}"
     fi
 
     # Configure auto-load on boot using QNAP's method with forced reload
@@ -153,8 +152,8 @@ pkg_post_install(){
     AUTORUN_CONF="/etc/config/autorun.conf"
     RC_LOCAL="/etc/rc.local"
 
-    # Create auto-load command that forces correct module
-    AUTOLOAD_CMD="rm -f ${MODULE_DIR}/modules.* 2>/dev/null; depmod -a 2>/dev/null; insmod ${MODULE_DIR}/${DRIVER_FILE} 2>/dev/null || modprobe r8152 2>/dev/null"
+    # Create auto-load command that loads from QPKG directory
+    AUTOLOAD_CMD="rmmod r8152 2>/dev/null; insmod ${QPKG_ROOT}/${DRIVER_FILE} 2>/dev/null"
 
     # Method 1: Try to add to rc.local if it exists and is writable
     if [ -f "${RC_LOCAL}" ] && [ -w "${RC_LOCAL}" ]; then
@@ -181,17 +180,14 @@ pkg_post_install(){
         INIT_SCRIPT="${QPKG_ROOT}/rtl8159-autoload.sh"
         cat > "${INIT_SCRIPT}" << EOFSCRIPT
 #!/bin/sh
-# RTL8159 Driver auto-load script with forced reload
-# This script clears module cache and force-loads the driver
+# RTL8159 Driver auto-load script
+# Loads driver from QPKG directory (bypasses read-only /lib/modules)
 
-# Clear module cache
-rm -f ${MODULE_DIR}/modules.* 2>/dev/null
+# Unload old module if loaded
+rmmod r8152 2>/dev/null || true
 
-# Rebuild dependencies
-depmod -a 2>/dev/null
-
-# Force load with insmod (absolute path)
-insmod ${MODULE_DIR}/${DRIVER_FILE} 2>/dev/null || modprobe r8152 2>/dev/null || true
+# Load driver from QPKG directory
+insmod ${QPKG_ROOT}/${DRIVER_FILE} 2>/dev/null || true
 EOFSCRIPT
         chmod +x "${INIT_SCRIPT}"
         log "Created auto-load script with forced reload: ${INIT_SCRIPT}"
