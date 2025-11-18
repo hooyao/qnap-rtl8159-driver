@@ -29,9 +29,10 @@ jobs:
       - name: Load versions from versions.yml
         id: get_version
         run: |
-          # Read driver and kernel versions from versions.yml (these are always from the file)
+          # Read versions from versions.yml
           DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
-          KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+          KERNEL_VERSION=$(grep 'kernel_version:' versions.yml | head -1 | sed 's/.*kernel_version:[[:space:]]*"\(.*\)".*/\1/' | tr -d '"' | tr -d "'")
+          QTS_VERSION=$(grep 'qts_version:' versions.yml | sed 's/.*qts_version:[[:space:]]*"\(.*\)".*/\1/' | tr -d '"' | tr -d "'")
 
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             # Manual trigger - use input for QPKG version
@@ -43,8 +44,13 @@ jobs:
 
           echo "driver_version=$DRIVER_VERSION" >> $GITHUB_OUTPUT
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+          echo "qts_version=$QTS_VERSION" >> $GITHUB_OUTPUT
           echo "qpkg_version=$QPKG_VERSION" >> $GITHUB_OUTPUT
-          echo "Building QPKG version: $QPKG_VERSION with driver version: $DRIVER_VERSION (kernel: $KERNEL_VERSION)"
+
+          echo "Building QPKG version: $QPKG_VERSION"
+          echo "  Driver: $DRIVER_VERSION"
+          echo "  Kernel: $KERNEL_VERSION"
+          echo "  QTS: $QTS_VERSION"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

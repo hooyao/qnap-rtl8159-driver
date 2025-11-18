@@ -11,9 +11,23 @@ case "$1" in
         echo "$QPKG_NAME is disabled."
         exit 1
     fi
-    # Driver is loaded during installation via package_routines
-    # Nothing to do here at service start
-    echo "$QPKG_NAME started (driver is kernel module, always active)"
+
+    # Load driver on startup if not already loaded
+    if ! lsmod | grep -q "^r8152 "; then
+        echo "Loading r8152 driver..."
+        modprobe r8152 2>/dev/null || insmod /lib/modules/$(uname -r)/r8152.ko 2>/dev/null || true
+    fi
+
+    # Check if auto-load script exists and run it
+    if [ -f "${QPKG_ROOT}/rtl8159-autoload.sh" ]; then
+        "${QPKG_ROOT}/rtl8159-autoload.sh"
+    fi
+
+    if lsmod | grep -q "^r8152 "; then
+        echo "$QPKG_NAME started successfully (driver loaded)"
+    else
+        echo "$QPKG_NAME started (driver load may have failed, check dmesg)"
+    fi
     ;;
 
   stop)

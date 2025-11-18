@@ -4,7 +4,8 @@ set -e
 # Configuration
 QNAP_GPL_URL="https://sourceforge.net/projects/qosgpl/files"
 KERNEL_VERSION="${KERNEL_VERSION:-5.10.60}"
-DRIVER_VERSION="${DRIVER_VERSION:-2.20.1}"
+# Use v2.17.1.20230903 to match QNAP's working driver version (v2.17.1 from 2023/06/13)
+DRIVER_VERSION="${DRIVER_VERSION:-2.17.1.20230903}"
 REALTEK_DRIVER_URL="https://github.com/wget/realtek-r8152-linux/archive/refs/tags/v${DRIVER_VERSION}.tar.gz"
 # RTL8159 is part of the r8152 driver family (r8152.ko supports RTL8152/8153/8156/8157/8159)
 DRIVER_NAME="r8152"
@@ -39,14 +40,9 @@ prepare_kernel() {
 
     cd /build/kernel/linux-source
 
-    # If user provides custom config, re-prepare kernel
-    if [ -f "/build/kernel/qnap_kernel.config" ]; then
-        echo "Using custom QNAP kernel config..."
-        cp /build/kernel/qnap_kernel.config .config
-        make ARCH=x86_64 scripts prepare modules_prepare
-    else
-        echo "✓ Using pre-configured kernel from Docker image"
-    fi
+    # QNAP's kernel source is already built with correct version (5.10.60-qnap)
+    echo "Using QNAP's pre-built kernel source (5.10.60-qnap)..."
+    echo "✓ Kernel source already prepared for module building"
 }
 
 # Function to download driver source
@@ -82,6 +78,31 @@ patch_driver() {
     if [ -f "r8152.c" ]; then
         echo "Patching strscpy -> strlcpy..."
         sed -i 's/strscpy/strlcpy/g' r8152.c
+
+        # Add RTL8159 (0x815a) and RTL8157 (0x8157) device ID support
+        # These devices are newer but compatible with the r8152 driver
+        echo "Adding RTL8157/RTL8159 device ID support..."
+
+        # Find the usb_device_id table and add entries before the terminator
+        # Look for the pattern: { USB_DEVICE(VENDOR_ID_REALTEK, 0x8156) }
+        # Add RTL8157 and RTL8159 entries after RTL8156
+
+        sed -i '/USB_DEVICE(VENDOR_ID_REALTEK, 0x8156)/a\
+\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x8157, USB_CLASS_COMM, USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE) },\
+\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x8157, USB_CLASS_COMM, USB_CDC_SUBCLASS_NCM, USB_CDC_PROTO_NONE) },\
+\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x8157, USB_CLASS_VENDOR_SPEC, USB_SUBCLASS_VENDOR_SPEC, 0xff) },\
+\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x815a, USB_CLASS_COMM, USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE) },\
+\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x815a, USB_CLASS_COMM, USB_CDC_SUBCLASS_NCM, USB_CDC_PROTO_NONE) },\
+\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x815a, USB_CLASS_VENDOR_SPEC, USB_SUBCLASS_VENDOR_SPEC, 0xff) },' r8152.c
+
+        echo "✓ RTL8157/RTL8159 device IDs added"
+    fi
+
+    # Enable S5 Wake-on-LAN support (uncomment in Makefile)
+    if [ -f "Makefile" ]; then
+        echo "Enabling S5 Wake-on-LAN (S5_WOL) support..."
+        sed -i 's/^#\([ \t]*ccflags-y += -DRTL8152_S5_WOL\)/\1/' Makefile
+        echo "✓ S5_WOL enabled"
     fi
 
     # Apply any additional patches if needed
@@ -93,6 +114,9 @@ compile_driver() {
     echo "[5/6] Compiling driver..."
 
     KERNEL_SRC="/build/kernel/linux-source"
+
+    # Compile against QNAP's actual kernel source (CONFIG_MODVERSIONS is disabled)
+    echo "Compiling against QNAP kernel source..."
 
     make ARCH=x86_64 \
          -C "${KERNEL_SRC}" \

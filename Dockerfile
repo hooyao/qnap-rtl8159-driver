@@ -45,20 +45,15 @@ ENV KERNEL_VERSION=5.10.60
 ENV DRIVER_VERSION=2.20.1
 ENV PATH="/opt/QDK:${PATH}"
 
-# Download and prepare kernel source (done once during image build)
-RUN mkdir -p /build/kernel /build/driver /build/qpkg /build/output && \
-    echo "Downloading kernel ${KERNEL_VERSION} source..." && \
-    cd /build/kernel && \
-    wget "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${KERNEL_VERSION}.tar.xz" && \
-    echo "Extracting kernel source..." && \
-    tar -xf linux-${KERNEL_VERSION}.tar.xz && \
-    mv linux-${KERNEL_VERSION} linux-source && \
-    rm linux-${KERNEL_VERSION}.tar.xz && \
-    echo "Preparing kernel for module building..." && \
-    cd linux-source && \
-    make ARCH=x86_64 x86_64_defconfig > /dev/null && \
-    make ARCH=x86_64 scripts prepare modules_prepare > /dev/null && \
-    echo "Kernel source ready for driver compilation"
+# Copy QNAP's complete kernel source (pre-built with correct configuration)
+COPY GPL_QTS/src/linux-5.10 /build/kernel/linux-source
+COPY GPL_QTS/kernel_cfg/TS-X65U/linux-5.10-x86_64.config /build/kernel/.config
+
+# Prepare QNAP kernel source for module building
+RUN mkdir -p /build/driver /build/qpkg /build/output && \
+    echo "Using QNAP's pre-built kernel 5.10.60-qnap source..." && \
+    cd /build/kernel/linux-source && \
+    echo "Kernel source already built and ready for driver compilation"
 
 # Copy build scripts
 COPY build_driver.sh /build/
