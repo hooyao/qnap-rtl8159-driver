@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_rebuild:
+        description: 'Force rebuild Docker image (bypass cache)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-and-release:
@@ -42,25 +47,70 @@ jobs:
             QPKG_VERSION=${GITHUB_REF#refs/tags/release-}
           fi
 
+          # Compute Docker image tag based on versions for cache management
+          DOCKER_TAG="qts-${QTS_VERSION}-kernel-${KERNEL_VERSION}-driver-${DRIVER_VERSION}"
+
           echo "driver_version=$DRIVER_VERSION" >> $GITHUB_OUTPUT
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           echo "qts_version=$QTS_VERSION" >> $GITHUB_OUTPUT
           echo "qpkg_version=$QPKG_VERSION" >> $GITHUB_OUTPUT
+          echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
 
           echo "Building QPKG version: $QPKG_VERSION"
           echo "  Driver: $DRIVER_VERSION"
           echo "  Kernel: $KERNEL_VERSION"
           echo "  QTS: $QTS_VERSION"
+          echo "  Docker tag: $DOCKER_TAG"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build driver and QPKG
+      - name: Cache GPL source
+        if: github.event.inputs.force_rebuild != 'true'
+        uses: actions/cache@v4
+        with:
+          path: GPL_QTS/
+          key: gpl-${{ hashFiles('versions.yml') }}
+          restore-keys: gpl-
+
+      - name: Cache Docker layers
+        if: github.event.inputs.force_rebuild != 'true'
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ steps.get_version.outputs.docker_tag }}
+          restore-keys: |
+            buildx-qts-${{ steps.get_version.outputs.qts_version }}-
+
+      - name: Prepare GPL source
+        run: ./prepare_gpl_source.sh
+
+      - name: Build Docker image with cache
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: rtl8159-builder:${{ steps.get_version.outputs.docker_tag }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Build driver
         run: |
-          # Use the build.sh script which handles everything
-          # Versions are read from versions.yml by build.sh, we only override QPKG_VERSION
+          export DOCKER_TAG="${{ steps.get_version.outputs.docker_tag }}"
           export QPKG_VERSION="${{ steps.get_version.outputs.qpkg_version }}"
-          bash build.sh all
+          bash build.sh driver
+
+      - name: Create QPKG
+        run: |
+          export DOCKER_TAG="${{ steps.get_version.outputs.docker_tag }}"
+          export QPKG_VERSION="${{ steps.get_version.outputs.qpkg_version }}"
+          bash build.sh qpkg
+
+      - name: Move cache
+        if: github.event.inputs.force_rebuild != 'true'
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: List built artifacts
         if: always()
