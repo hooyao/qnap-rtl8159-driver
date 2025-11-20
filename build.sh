@@ -11,7 +11,7 @@ echo "=========================================="
 
 # Configuration
 DOCKER_IMAGE="rtl8159-builder"
-DOCKER_TAG="latest"
+DOCKER_TAG="${DOCKER_TAG:-latest}"  # Allow override from environment
 CONTAINER_NAME="rtl8159-build"
 
 # Load versions from versions.yml
