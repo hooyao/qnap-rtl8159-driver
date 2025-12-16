@@ -4,7 +4,7 @@
 # Realtek driver version to download and compile
 # This should match an actual release tag from:
 # https://github.com/wget/realtek-r8152-linux/releases
-driver_version: "2.20.1"
+driver_version: "2.21.4"
 
 # QNAP GPL Kernel Source Configuration
 # The GPL source is distributed as split archives that must be concatenated
