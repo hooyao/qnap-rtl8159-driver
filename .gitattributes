@@ -1,0 +1,17 @@
+# Normalize line endings: store text as LF in git and check it out as LF on every
+# platform. This prevents a Windows checkout (core.autocrlf=true) from producing
+# CRLF shell scripts that fail inside the Docker build container with
+#   "/bin/bash^M: bad interpreter: No such file or directory"
+# and from injecting a trailing \r into versions.yml version strings.
+* text=auto eol=lf
+
+# Explicit, for the files that MUST stay LF (executed in the container / on the NAS)
+*.sh             text eol=lf
+Dockerfile       text eol=lf
+package_routines text eol=lf
+
+# Binary assets must never be line-ending converted
+*.gif binary
+*.png binary
+*.jpg binary
+*.qpkg binary

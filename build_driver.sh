@@ -4,8 +4,9 @@ set -e
 # Configuration
 QNAP_GPL_URL="https://sourceforge.net/projects/qosgpl/files"
 KERNEL_VERSION="${KERNEL_VERSION:-5.10.60}"
-# Use v2.17.1.20230903 to match QNAP's working driver version (v2.17.1 from 2023/06/13)
-DRIVER_VERSION="${DRIVER_VERSION:-2.17.1.20230903}"
+# DRIVER_VERSION is provided by build.sh from versions.yml (the single source of truth).
+# Fail loudly if it is missing rather than silently building a stale/hardcoded version.
+: "${DRIVER_VERSION:?DRIVER_VERSION must be set (normally passed by build.sh from versions.yml)}"
 REALTEK_DRIVER_URL="https://github.com/wget/realtek-r8152-linux/archive/refs/tags/v${DRIVER_VERSION}.tar.gz"
 # RTL8159 is part of the r8152 driver family (r8152.ko supports RTL8152/8153/8156/8157/8159)
 DRIVER_NAME="r8152"
@@ -79,23 +80,26 @@ patch_driver() {
         echo "Patching strscpy -> strlcpy..."
         sed -i 's/strscpy/strlcpy/g' r8152.c
 
-        # Add RTL8159 (0x815a) and RTL8157 (0x8157) device ID support
-        # These devices are newer but compatible with the r8152 driver
-        echo "Adding RTL8157/RTL8159 device ID support..."
-
-        # Find the usb_device_id table and add entries before the terminator
-        # Look for the pattern: { USB_DEVICE(VENDOR_ID_REALTEK, 0x8156) }
-        # Add RTL8157 and RTL8159 entries after RTL8156
-
-        sed -i '/USB_DEVICE(VENDOR_ID_REALTEK, 0x8156)/a\
+        # Add RTL8159 (0x815a) and RTL8157 (0x8157) device ID support.
+        # Newer upstream releases (>= v2.21.x) already ship these IDs natively in
+        # rtl8152_table[], so only inject them when they are missing - otherwise we
+        # would create duplicate entries. This keeps the patch correct across driver
+        # version upgrades without manual edits (the guard matches both the historic
+        # USB_DEVICE(...) form and the newer REALTEK_USB_DEVICE(...) macro).
+        if grep -qE 'USB_DEVICE\(VENDOR_ID_REALTEK, 0x815a\)' r8152.c; then
+            echo "✓ RTL8157/RTL8159 already present in driver source - skipping injection"
+        else
+            echo "Adding RTL8157/RTL8159 device ID support..."
+            # Find the RTL8156 entry and add RTL8157/RTL8159 entries after it
+            sed -i '/USB_DEVICE(VENDOR_ID_REALTEK, 0x8156)/a\
 \t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x8157, USB_CLASS_COMM, USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE) },\
 \t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x8157, USB_CLASS_COMM, USB_CDC_SUBCLASS_NCM, USB_CDC_PROTO_NONE) },\
 \t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x8157, USB_CLASS_VENDOR_SPEC, USB_SUBCLASS_VENDOR_SPEC, 0xff) },\
 \t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x815a, USB_CLASS_COMM, USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE) },\
 \t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x815a, USB_CLASS_COMM, USB_CDC_SUBCLASS_NCM, USB_CDC_PROTO_NONE) },\
 \t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x815a, USB_CLASS_VENDOR_SPEC, USB_SUBCLASS_VENDOR_SPEC, 0xff) },' r8152.c
-
-        echo "✓ RTL8157/RTL8159 device IDs added"
+            echo "✓ RTL8157/RTL8159 device IDs added"
+        fi
     fi
 
     # Enable S5 Wake-on-LAN support (uncomment in Makefile)

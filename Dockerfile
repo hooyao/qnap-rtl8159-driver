@@ -40,9 +40,11 @@ RUN git clone https://github.com/qnap-dev/QDK.git /opt/QDK && \
 WORKDIR /build
 
 # Set environment variables
+# NOTE: DRIVER_VERSION is intentionally NOT baked in here. It is supplied at runtime
+# (docker run -e DRIVER_VERSION=...) by build.sh, which reads it from versions.yml
+# (the single source of truth). Hardcoding it here would create a stale duplicate.
 ENV ARCH=x86_64
 ENV KERNEL_VERSION=5.10.60
-ENV DRIVER_VERSION=2.20.1
 ENV PATH="/opt/QDK:${PATH}"
 
 # Copy QNAP's complete kernel source (pre-built with correct configuration)

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       qpkg_version:
-        description: 'QPKG package version (e.g., 2.20.1b1)'
+        description: 'QPKG package version (leave empty to use driver_version from versions.yml)'
         required: false
-        default: '2.20.1'
+        default: ''
       create_release:
         description: 'Create a GitHub release'
         required: false
@@ -40,8 +40,11 @@ jobs:
           QTS_VERSION=$(grep 'qts_version:' versions.yml | sed 's/.*qts_version:[[:space:]]*"\(.*\)".*/\1/' | tr -d '"' | tr -d "'")
 
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Manual trigger - use input for QPKG version
+            # Manual trigger - use input, or fall back to driver_version from versions.yml
             QPKG_VERSION="${{ github.event.inputs.qpkg_version }}"
+            if [ -z "$QPKG_VERSION" ]; then
+              QPKG_VERSION="$DRIVER_VERSION"
+            fi
           else
             # Tag trigger - extract QPKG version from tag (e.g., release-5.55.1b1 -> 5.55.1b1)
             QPKG_VERSION=${GITHUB_REF#refs/tags/release-}
