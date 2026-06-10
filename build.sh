@@ -14,18 +14,25 @@ DOCKER_IMAGE="rtl8159-builder"
 DOCKER_TAG="${DOCKER_TAG:-latest}"  # Allow override from environment
 CONTAINER_NAME="rtl8159-build"
 
-# Load versions from versions.yml
-if [ -f "versions.yml" ]; then
-    # Parse YAML using grep and sed (simple approach, no external dependencies)
-    DEFAULT_DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
-    DEFAULT_KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
-else
-    echo "WARNING: versions.yml not found, using hardcoded defaults"
-    DEFAULT_DRIVER_VERSION="2.20.1"
-    DEFAULT_KERNEL_VERSION="5.10.60"
+# Load versions from versions.yml (the single source of truth for all versions).
+# There are intentionally NO hardcoded version fallbacks here: a missing or garbled
+# versions.yml must fail loudly instead of silently building a stale version.
+if [ ! -f "versions.yml" ]; then
+    echo "ERROR: versions.yml not found - it is the single source of truth for versions."
+    echo "Run this script from the repository root."
+    exit 1
 fi
 
-# Use environment variables if set, otherwise use defaults from versions.yml
+# Parse YAML using grep and sed (simple approach, no external dependencies)
+DEFAULT_DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+DEFAULT_KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+
+if [ -z "${DEFAULT_DRIVER_VERSION}" ]; then
+    echo "ERROR: could not read 'driver_version' from versions.yml"
+    exit 1
+fi
+
+# Use environment variables if set, otherwise use values from versions.yml
 DRIVER_VERSION="${DRIVER_VERSION:-${DEFAULT_DRIVER_VERSION}}"
 KERNEL_VERSION="${KERNEL_VERSION:-${DEFAULT_KERNEL_VERSION}}"
 QPKG_VERSION="${QPKG_VERSION:-${DRIVER_VERSION}}"

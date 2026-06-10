@@ -4,7 +4,7 @@
 
 **Last Updated**: November 18, 2025
 **Status**: Production Ready
-**Driver Version**: v2.20.1 with RTL8159 support
+**Driver Version**: v2.21.4 with RTL8159 support
 **Target**: QNAP x86_64 systems running QuTS hero h5.2.x (kernel 5.10.60-qnap)
 
 ---
@@ -16,7 +16,7 @@
 ./prepare_gpl_source.sh  # Auto-downloads if needed
 
 # 2. Build everything
-export DRIVER_VERSION=2.20.1
+export DRIVER_VERSION=2.21.4
 ./build.sh all
 
 # 3. Output
@@ -171,7 +171,7 @@ sed -i '/USB_DEVICE(VENDOR_ID_REALTEK, 0x8156)/a\
 ### versions.yml Structure
 
 ```yaml
-driver_version: "2.20.1"  # Realtek driver to download
+driver_version: "2.21.4"  # Realtek driver to download
 
 gpl_source:
   kernel_version: "5.10.60"      # Target kernel
@@ -276,7 +276,7 @@ echo "QPKG:   $FILE_SRC"
 
 # 3. Check module version
 cat /sys/module/r8152/version
-# Should be: v2.20.1 (2025/05/13)
+# Should be: v2.21.4 (2025/10/28)
 
 # 4. Check USB device
 lsusb | grep 0bda:815a
@@ -496,7 +496,7 @@ Don't waste time trying to:
 - ✅ Driver compiles: 391KB r8152.ko file
 - ✅ Module loads: `lsmod | grep r8152`
 - ✅ Correct module: srcversion matches QPKG driver file
-- ✅ Version correct: v2.20.1 (2025/05/13)
+- ✅ Version correct: v2.21.4 (2025/10/28)
 - ✅ Device detects: USB device → ethX interface
 - ✅ Network works: Can ping/transfer data
 - ✅ Survives reboot: Auto-loads on boot

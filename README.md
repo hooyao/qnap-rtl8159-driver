@@ -8,7 +8,7 @@ Automated build system for compiling and packaging the Realtek RTL8159 10Gbps US
 
 ## 🎉 Success Summary
 
-- **Driver Version**: v2.20.1 (2025/05/13) - Latest version with RTL8159 support
+- **Driver Version**: v2.21.4 (2025/10/28) - Latest version with RTL8159 support
 - **Tested On**: QNAP TS-X65U running QuTS hero h5.2.7.3251 (kernel 5.10.60-qnap)
 - **Build Status**: ✅ Compiles successfully
 - **Installation Status**: ✅ Loads without errors
@@ -23,7 +23,7 @@ Successfully built a working kernel module by using **QNAP's actual GPL kernel s
 
 ## Features
 
-- **Latest Driver**: v2.20.1 with RTL8157/8159 support (10Gbps capable)
+- **Latest Driver**: v2.21.4 with RTL8157/8159 support (10Gbps capable)
 - **Automated Build**: Docker-based reproducible build environment
 - **Official QDK**: Uses QNAP's official QDK (QPKG Development Kit) for packaging
 - **Multi-Device Support**: RTL8152/8153/8155/8156/8157/8159 USB Ethernet adapters
@@ -132,7 +132,7 @@ wget https://master.dl.sourceforge.net/project/qosgpl/QNAP%20NAS%20GPL%20Source/
 git clone <your-repo> && cd quts_rtl
 
 # Build everything - GPL source auto-downloads if not present!
-export DRIVER_VERSION=2.20.1
+export DRIVER_VERSION=2.21.4
 ./build.sh all
 ```
 
@@ -148,7 +148,7 @@ That's it! The build system will:
 - Subsequent builds: ~1-2 minutes
 
 **Final output**:
-- `output/RTL8159_Driver_2.20.1_x86_64.qpkg` (126KB) - Ready to install!
+- `output/RTL8159_Driver_2.21.4_x86_64.qpkg` (126KB) - Ready to install!
 - `output/driver/r8152.ko` (391KB) - Compiled driver
 
 ### 2. Install on QNAP
@@ -165,12 +165,12 @@ That's it! The build system will:
 
 ```bash
 # Copy to NAS
-scp output/RTL8159_Driver_2.20.1_x86_64.qpkg admin@your-nas:/share/Public/
+scp output/RTL8159_Driver_2.21.4_x86_64.qpkg admin@your-nas:/share/Public/
 
 # SSH and install
 ssh admin@your-nas
 cd /share/Public
-sudo sh RTL8159_Driver_2.20.1_x86_64.qpkg
+sudo sh RTL8159_Driver_2.21.4_x86_64.qpkg
 ```
 
 ### 3. Verify Installation (Automatic)
@@ -205,7 +205,7 @@ echo "QPKG driver:   $FILE_SRC"
 
 # 3. Check module version
 cat /sys/module/r8152/version
-# Should be: v2.20.1 (2025/05/13)
+# Should be: v2.21.4 (2025/10/28)
 
 # 4. Check USB device detected
 lsusb | grep Realtek
@@ -221,7 +221,7 @@ dmesg | tail -20 | grep r8152
 
 **Expected results**:
 - Loaded srcversion matches QPKG driver srcversion ✓
-- Version: v2.20.1 (2025/05/13)
+- Version: v2.21.4 (2025/10/28)
 - Runtime size: ~294KB (NORMAL - ignore this!)
 - Network interface appears after USB plug-in
 
@@ -267,7 +267,7 @@ quts_rtl/
    - Uses model-specific kernel configuration
 
 2. **build_driver.sh**:
-   - Downloads Realtek driver source (v2.20.1)
+   - Downloads Realtek driver source (v2.21.4)
    - **Patches** to add RTL8157/8159 device IDs
    - Compiles against QNAP's kernel source
    - Enables S5 Wake-on-LAN support
@@ -480,7 +480,7 @@ docker system prune -a  # Clean Docker cache
 ## Technical Details
 
 ### Driver Specifications
-- **Version**: v2.20.1 (2025/05/13)
+- **Version**: v2.21.4 (2025/10/28)
 - **Source**: https://github.com/wget/realtek-r8152-linux
 - **Module**: r8152.ko
 - **Compiled size**: 391,728 bytes
