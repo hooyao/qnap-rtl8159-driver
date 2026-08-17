@@ -1,0 +1,91 @@
+# Command allow rules equivalent to the Bash entries in
+# .claude/settings.local.json. Broader existing entries (git:* and
+# docker run:*) intentionally subsume their narrower duplicates.
+
+prefix_rule(
+    pattern = ["chmod"],
+    decision = "allow",
+    justification = "Build scripts may need executable permissions.",
+    match = ["chmod +x build.sh"],
+)
+
+prefix_rule(
+    pattern = ["docker", "build"],
+    decision = "allow",
+    justification = "The driver build uses the repository Dockerfile.",
+    match = ["docker build -t rtl8159-builder ."],
+)
+
+prefix_rule(
+    pattern = ["./build.sh"],
+    decision = "allow",
+    justification = "This is the repository build orchestrator.",
+    match = ["./build.sh all"],
+)
+
+prefix_rule(
+    pattern = ["docker", "run"],
+    decision = "allow",
+    justification = "Build and inspection tasks run in the project container.",
+    match = [
+        "docker run --rm rtl8159-builder /bin/bash -c 'ls -la /opt/QDK/ && which qbuild'",
+    ],
+)
+
+prefix_rule(
+    pattern = ["bash", "-c", 'ARCHIVE_LINE=$(awk ""/^__ARCHIVE_BELOW__$/ {print NR + 1; exit 0; }"" RTL8159_Driver_2.21.4_x86_64.qpkg) && tail -n +${ARCHIVE_LINE} RTL8159_Driver_2.21.4_x86_64.qpkg | tar -tzf - | head -20'],
+    decision = "allow",
+    justification = "This exact command only inspects the embedded QPKG archive.",
+    match = [
+        'bash -c \'ARCHIVE_LINE=$(awk ""/^__ARCHIVE_BELOW__$/ {print NR + 1; exit 0; }"" RTL8159_Driver_2.21.4_x86_64.qpkg) && tail -n +${ARCHIVE_LINE} RTL8159_Driver_2.21.4_x86_64.qpkg | tar -tzf - | head -20\'',
+    ],
+)
+
+prefix_rule(
+    pattern = ["cat"],
+    decision = "allow",
+    justification = "Read project and build files.",
+    match = ["cat versions.yml"],
+)
+
+prefix_rule(
+    pattern = ["git"],
+    decision = "allow",
+    justification = "Mirrors the existing Claude Code git:* project permission.",
+    match = ["git status", "git add AGENTS.md", "git commit -m docs", "git fetch origin"],
+)
+
+prefix_rule(
+    pattern = ["tee"],
+    decision = "allow",
+    justification = "Used by existing shell workflows.",
+    match = ["tee build.log"],
+)
+
+prefix_rule(
+    pattern = ["tree"],
+    decision = "allow",
+    justification = "Inspect the project layout.",
+    match = ["tree qpkg"],
+)
+
+prefix_rule(
+    pattern = ["identify"],
+    decision = "allow",
+    justification = "Inspect QPKG image assets.",
+    match = ["identify qpkg/RTL8159_Driver/icons/RTL8159_Driver.gif"],
+)
+
+prefix_rule(
+    pattern = ["mkdir"],
+    decision = "allow",
+    justification = "Create build directories inside project workflows.",
+    match = ["mkdir -p output/driver"],
+)
+
+prefix_rule(
+    pattern = ["modinfo"],
+    decision = "allow",
+    justification = "Inspect the compiled kernel module metadata.",
+    match = ["modinfo output/driver/r8152.ko"],
+)

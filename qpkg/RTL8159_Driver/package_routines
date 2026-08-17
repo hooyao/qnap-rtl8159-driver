@@ -2,295 +2,225 @@
 # Package routines for RTL8159 USB Ethernet Driver
 ######################################################################
 
-QPKG_NAME="RTL8159_Driver"
-QPKG_ROOT=$(/sbin/getcfg ${QPKG_NAME} Install_Path -f /etc/config/qpkg.conf)
 DRIVER_FILE="r8152.ko"
-KERNEL_VERSION=$(uname -r)
-MODULE_DIR="/lib/modules/${KERNEL_VERSION}"
-LOG_FILE="${QPKG_ROOT}/install.log"
+SERVICE_FILE="RTL8159_Driver.sh"
+INSTALL_LOG="${SYS_QPKG_DIR}/install.log"
 
-# Logging function
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
-}
+routine_module_field() {
+    RTL8159_ROUTINE_FIELD="$1"
+    RTL8159_ROUTINE_MODULE="$2"
+    RTL8159_ROUTINE_VALUE=""
 
-######################################################################
-# Define any package specific operations that shall be performed when
-# the package is installed.
-######################################################################
-pkg_pre_install(){
-    log "=== Pre-installation started ==="
-
-    # Create module directory
-    mkdir -p "${MODULE_DIR}"
-
-    # Backup existing driver
-    if [ -f "${MODULE_DIR}/${DRIVER_FILE}" ]; then
-        cp "${MODULE_DIR}/${DRIVER_FILE}" "${MODULE_DIR}/${DRIVER_FILE}.backup.$(date +%s)"
-        log "Backed up existing driver"
+    if command -v modinfo >/dev/null 2>&1; then
+        RTL8159_ROUTINE_VALUE=$(modinfo -F "${RTL8159_ROUTINE_FIELD}" "${RTL8159_ROUTINE_MODULE}" 2>/dev/null | head -1)
     fi
 
-    # Unload existing driver
-    if lsmod | grep -q "^r8152 "; then
-        rmmod r8152 2>/dev/null || modprobe -r r8152 2>/dev/null || true
-        log "Unloaded existing r8152 driver"
+    if [ -z "${RTL8159_ROUTINE_VALUE}" ] && command -v strings >/dev/null 2>&1; then
+        RTL8159_ROUTINE_VALUE=$(strings "${RTL8159_ROUTINE_MODULE}" 2>/dev/null |
+            sed -n "s/^${RTL8159_ROUTINE_FIELD}=//p" | head -1)
+    fi
+
+    printf '%s\n' "${RTL8159_ROUTINE_VALUE}"
+}
+
+routine_loaded_srcversion() {
+    if [ -r /sys/module/r8152/srcversion ]; then
+        tr -d '\r\n' < /sys/module/r8152/srcversion
     fi
 }
 
-pkg_install(){
-    log "=== Installation started ==="
+routine_module_loaded() {
+    lsmod 2>/dev/null | grep -q '^r8152[[:space:]]'
+}
 
-    # Determine architecture and verify driver exists
-    ARCH=$(uname -m)
-    case "$ARCH" in
-        x86_64)
-            # QDK extracts architecture-specific files directly to QPKG_ROOT
-            # Check both possible locations for compatibility
-            if [ -f "${QPKG_ROOT}/${DRIVER_FILE}" ]; then
-                log "Driver found in QPKG directory: ${QPKG_ROOT}/${DRIVER_FILE}"
-            elif [ -f "${QPKG_ROOT}/x86_64/${DRIVER_FILE}" ]; then
-                # Move to root for consistency
-                mv "${QPKG_ROOT}/x86_64/${DRIVER_FILE}" "${QPKG_ROOT}/"
-                log "Driver moved from x86_64/ to QPKG root"
-            else
-                log "ERROR: Driver not found in ${QPKG_ROOT}/ or ${QPKG_ROOT}/x86_64/"
-                log "Contents of ${QPKG_ROOT}:"
-                ls -la "${QPKG_ROOT}" 2>&1 | while read line; do log "  $line"; done
-                return 1
+routine_stock_path() {
+    RTL8159_ROUTINE_KERNEL=$(uname -r)
+    RTL8159_ROUTINE_MODULE_DIR="/lib/modules/${RTL8159_ROUTINE_KERNEL}"
+    RTL8159_ROUTINE_STOCK_PATH=""
+
+    if command -v modinfo >/dev/null 2>&1; then
+        RTL8159_ROUTINE_STOCK_PATH=$(modinfo -n r8152 2>/dev/null | head -1)
+        case "${RTL8159_ROUTINE_STOCK_PATH}" in
+            ""|"(builtin)")
+                RTL8159_ROUTINE_STOCK_PATH=""
+                ;;
+            /*)
+                ;;
+            *)
+                RTL8159_ROUTINE_STOCK_PATH="${RTL8159_ROUTINE_MODULE_DIR}/${RTL8159_ROUTINE_STOCK_PATH}"
+                ;;
+        esac
+    fi
+
+    if [ -z "${RTL8159_ROUTINE_STOCK_PATH}" ] &&
+       [ -r "${RTL8159_ROUTINE_MODULE_DIR}/modules.dep" ]; then
+        RTL8159_ROUTINE_STOCK_PATH=$(awk -F: '$1 ~ /(^|\/)r8152\.ko(\.(xz|gz|zst))?$/ { print $1; exit }' "${RTL8159_ROUTINE_MODULE_DIR}/modules.dep")
+        if [ -n "${RTL8159_ROUTINE_STOCK_PATH}" ]; then
+            case "${RTL8159_ROUTINE_STOCK_PATH}" in
+                /*) ;;
+                *) RTL8159_ROUTINE_STOCK_PATH="${RTL8159_ROUTINE_MODULE_DIR}/${RTL8159_ROUTINE_STOCK_PATH}" ;;
+            esac
+        fi
+    fi
+
+    if [ -z "${RTL8159_ROUTINE_STOCK_PATH}" ]; then
+        RTL8159_ROUTINE_STOCK_PATH=$(find "${RTL8159_ROUTINE_MODULE_DIR}" \( -name 'r8152.ko' -o -name 'r8152.ko.xz' -o -name 'r8152.ko.gz' -o -name 'r8152.ko.zst' \) 2>/dev/null | head -1)
+    fi
+
+    if [ -n "${RTL8159_ROUTINE_STOCK_PATH}" ] &&
+       [ ! -r "${RTL8159_ROUTINE_STOCK_PATH}" ]; then
+        RTL8159_ROUTINE_STOCK_PATH=""
+    fi
+
+    printf '%s\n' "${RTL8159_ROUTINE_STOCK_PATH}"
+}
+
+restore_stock_before_upgrade() {
+    RTL8159_OLD_DRIVER="${SYS_QPKG_DIR}/${DRIVER_FILE}"
+    [ -r "${RTL8159_OLD_DRIVER}" ] || return 0
+    routine_module_loaded || return 0
+
+    RTL8159_OLD_SRC=$(routine_module_field srcversion "${RTL8159_OLD_DRIVER}")
+    RTL8159_ACTIVE_SRC=$(routine_loaded_srcversion)
+
+    # Only touch the active module when it is positively identified as the
+    # previous QPKG copy. A stock or unknown module is left untouched.
+    if [ -z "${RTL8159_OLD_SRC}" ] || [ "${RTL8159_ACTIVE_SRC}" != "${RTL8159_OLD_SRC}" ]; then
+        return 0
+    fi
+
+    RTL8159_STOCK_PATH=$(routine_stock_path)
+    RTL8159_STOCK_SRC=$(routine_module_field srcversion "${RTL8159_STOCK_PATH}")
+    RTL8159_STOCK_VERMAGIC=$(routine_module_field vermagic "${RTL8159_STOCK_PATH}")
+    RTL8159_STOCK_KERNEL=${RTL8159_STOCK_VERMAGIC%% *}
+
+    if [ -z "${RTL8159_STOCK_PATH}" ] ||
+       [ -z "${RTL8159_STOCK_SRC}" ] ||
+       [ "${RTL8159_STOCK_KERNEL}" != "$(uname -r)" ]; then
+        err_log "Cannot verify the stock r8152 module before upgrading; the active QPKG driver was left loaded."
+    fi
+
+    log "Restoring the stock r8152 module before replacing QPKG files."
+    if ! rmmod r8152 2>/dev/null; then
+        err_log "Could not unload the previous QPKG r8152 module."
+    fi
+
+    if modprobe r8152 2>/dev/null &&
+       [ "$(routine_loaded_srcversion)" = "${RTL8159_STOCK_SRC}" ]; then
+        log "Verified stock r8152 module restored."
+        return 0
+    fi
+
+    if routine_module_loaded; then
+        rmmod r8152 2>/dev/null || true
+    fi
+
+    case "${RTL8159_STOCK_PATH}" in
+        *.ko)
+            if insmod "${RTL8159_STOCK_PATH}" 2>/dev/null &&
+               [ "$(routine_loaded_srcversion)" = "${RTL8159_STOCK_SRC}" ]; then
+                log "Verified stock r8152 module restored from its absolute path."
+                return 0
             fi
-            ;;
-        *)
-            log "ERROR: Unsupported architecture: $ARCH"
-            return 1
             ;;
     esac
 
-    # NOTE: /lib/modules is often read-only on QNAP systems
-    # We keep the driver in QPKG directory and load from there
-    log "Driver will be loaded from QPKG directory (read-only /lib/modules)"
+    # Keep the NAS usable if stock restoration unexpectedly fails.
+    if routine_module_loaded; then
+        rmmod r8152 2>/dev/null || true
+    fi
+    if insmod "${RTL8159_OLD_DRIVER}" 2>/dev/null &&
+       [ "$(routine_loaded_srcversion)" = "${RTL8159_OLD_SRC}" ]; then
+        warn_log "Stock restore failed; the previous QPKG driver was put back before aborting."
+    elif routine_module_loaded; then
+        rmmod r8152 2>/dev/null || true
+    fi
+    err_log "Could not restore the verified stock r8152 module; upgrade aborted."
+}
 
-    # Update module dependencies (in case other modules need to be updated)
-    depmod -a 2>/dev/null || true
-    log "Updated module dependencies"
+run_service() {
+    RTL8159_ROUTINE_ACTION="$1"
+    RTL8159_ROUTINE_SERVICE="${SYS_QPKG_DIR}/${SERVICE_FILE}"
+
+    if [ ! -x "${RTL8159_ROUTINE_SERVICE}" ]; then
+        return 1
+    fi
+
+    RTL8159_QPKG_ROOT="${SYS_QPKG_DIR}" RTL8159_SKIP_ENABLE_CHECK=TRUE "${RTL8159_ROUTINE_SERVICE}" "${RTL8159_ROUTINE_ACTION}" >> "${INSTALL_LOG}" 2>&1
+}
+
+pkg_pre_install(){
+    log "RTL8159 pre-install: preserving the stock /lib/modules driver."
+    restore_stock_before_upgrade
+}
+
+pkg_install(){
+    if [ "${SYS_CPU_ARCH}" != "x86_64" ]; then
+        err_log "Unsupported architecture: ${SYS_CPU_ARCH}; x86_64 is required."
+    fi
+
+    if [ ! -f "${SYS_QPKG_DIR}/${DRIVER_FILE}" ] &&
+       [ -f "${SYS_QPKG_DIR}/x86_64/${DRIVER_FILE}" ]; then
+        mv "${SYS_QPKG_DIR}/x86_64/${DRIVER_FILE}" "${SYS_QPKG_DIR}/"
+    fi
+
+    if [ ! -r "${SYS_QPKG_DIR}/${DRIVER_FILE}" ]; then
+        err_log "Packaged driver not found in ${SYS_QPKG_DIR}."
+    fi
+
+    if [ ! -f "${SYS_QPKG_DIR}/${SERVICE_FILE}" ]; then
+        err_log "QPKG service script not found in ${SYS_QPKG_DIR}."
+    fi
+    chmod 755 "${SYS_QPKG_DIR}/${SERVICE_FILE}"
+
+    : > "${INSTALL_LOG}"
+    if ! run_service validate; then
+        err_log "Driver validation failed. The running module was not changed; see ${INSTALL_LOG}."
+    fi
+
+    log "Driver architecture, vermagic and srcversion metadata validated."
 }
 
 pkg_post_install(){
-    log "=== Post-installation started ==="
-
-    # Load driver from QPKG directory (not /lib/modules which is read-only on QNAP)
-    DRIVER_PATH="${QPKG_ROOT}/${DRIVER_FILE}"
-
-    if [ -f "${DRIVER_PATH}" ]; then
-        log "Driver path: ${DRIVER_PATH}"
-        log "Driver size: $(ls -lh "${DRIVER_PATH}" 2>/dev/null | awk '{print $5}')"
-
-        # Unload any existing r8152 module completely
-        if lsmod | grep -q "^r8152 "; then
-            log "Unloading existing r8152 module..."
-            rmmod r8152 2>/dev/null || true
-            sleep 1
-        fi
-
-        # Force load with insmod using absolute path from QPKG directory
-        # This bypasses the module system and /lib/modules entirely
-        log "Loading driver directly from QPKG directory with insmod..."
-        if insmod "${DRIVER_PATH}" 2>/dev/null; then
-            log "Driver loaded successfully via insmod from QPKG directory"
-        else
-            # Log detailed error information
-            log "ERROR: Driver loading failed"
-            log "Kernel version: $(uname -r)"
-
-            # Try to get more error details
-            dmesg | tail -20 | grep -i "r8152\|rtl" | while read line; do
-                log "  dmesg: $line"
-            done 2>/dev/null || true
-
-            log "Manual reload command:"
-            log "  sudo insmod ${DRIVER_PATH}"
-        fi
-
-        # Verify driver is loaded using srcversion (NOT size!)
-        if lsmod | grep -q "^r8152 "; then
-            log "Driver module is loaded"
-
-            # Get srcversion to verify correct module
-            LOADED_SRC=$(cat /sys/module/r8152/srcversion 2>/dev/null)
-            FILE_SRC=$(strings "${DRIVER_PATH}" 2>/dev/null | grep "^srcversion=" | cut -d= -f2)
-
-            if [ -n "${LOADED_SRC}" ] && [ -n "${FILE_SRC}" ]; then
-                if [ "${LOADED_SRC}" = "${FILE_SRC}" ]; then
-                    log "SUCCESS: Correct module verified (srcversion: ${LOADED_SRC})"
-                else
-                    log "WARNING: Different module loaded!"
-                    log "  Expected srcversion: ${FILE_SRC}"
-                    log "  Loaded srcversion: ${LOADED_SRC}"
-                    log "Manual reload command:"
-                    log "  sudo rmmod r8152"
-                    log "  sudo insmod ${DRIVER_PATH}"
-                fi
-            else
-                log "INFO: Cannot verify srcversion (may not be available)"
-            fi
-
-            # Show module version
-            MODULE_VER=$(cat /sys/module/r8152/version 2>/dev/null)
-            if [ -n "${MODULE_VER}" ]; then
-                log "Module version: ${MODULE_VER}"
-            fi
-        else
-            log "ERROR: Driver not loaded. Please check dmesg for errors."
-            log "Manual reload command:"
-            log "  sudo insmod ${DRIVER_PATH}"
-        fi
-    else
-        log "ERROR: Driver file not found at ${DRIVER_PATH}"
+    if ! run_service cleanup; then
+        err_log "Legacy auto-load entries could not be removed safely. The active module was not replaced; see ${INSTALL_LOG}."
     fi
 
-    # Configure auto-load on boot using QNAP's method with forced reload
-    # QNAP uses /etc/config/modules.conf or rc.local for boot scripts
-    AUTORUN_CONF="/etc/config/autorun.conf"
-    RC_LOCAL="/etc/rc.local"
-
-    # Create auto-load command that loads from QPKG directory
-    AUTOLOAD_CMD="rmmod r8152 2>/dev/null; insmod ${QPKG_ROOT}/${DRIVER_FILE} 2>/dev/null"
-
-    # Method 1: Try to add to rc.local if it exists and is writable
-    if [ -f "${RC_LOCAL}" ] && [ -w "${RC_LOCAL}" ]; then
-        # Check if our entry already exists
-        if ! grep -q "RTL8159 Driver auto-load" "${RC_LOCAL}"; then
-            # Add before the last line (usually 'exit 0') with forced reload
-            sed -i "/^exit 0/i # RTL8159 Driver auto-load (with cache clear)\n${AUTOLOAD_CMD}" "${RC_LOCAL}" 2>/dev/null && \
-                log "Auto-load on boot configured: ${RC_LOCAL} (with forced reload)" || \
-                log "WARNING: Could not modify ${RC_LOCAL}"
+    if [ "${SYS_QPKG_SERVICE_ENABLED}" = "TRUE" ]; then
+        if run_service start; then
+            RTL8159_START_STATUS=0
         else
-            log "Auto-load already configured in ${RC_LOCAL}"
+            RTL8159_START_STATUS=$?
         fi
-    # Method 2: Try QNAP's autorun.conf if it exists
-    elif [ -f "${AUTORUN_CONF}" ] && [ -w "${AUTORUN_CONF}" ]; then
-        if ! grep -q "RTL8159 Driver" "${AUTORUN_CONF}"; then
-            echo "${AUTOLOAD_CMD} # RTL8159 Driver (forced reload)" >> "${AUTORUN_CONF}" && \
-                log "Auto-load on boot configured: ${AUTORUN_CONF} (with forced reload)" || \
-                log "WARNING: Could not modify ${AUTORUN_CONF}"
-        else
-            log "Auto-load already configured in ${AUTORUN_CONF}"
-        fi
+        case "${RTL8159_START_STATUS}" in
+            0)
+                log "Verified QPKG r8152 driver loaded successfully."
+                ;;
+            1)
+                SYS_QPKG_SERVICE_ENABLED=FALSE
+                warn_log "QPKG driver was not activated; the existing or restored stock module remains safe and the package will stay disabled. See ${INSTALL_LOG}."
+                ;;
+            *)
+                err_log "QPKG driver activation failed and no verified fallback could be loaded. See ${INSTALL_LOG}."
+                ;;
+        esac
     else
-        # Method 3: Create our own init script with forced reload
-        INIT_SCRIPT="${QPKG_ROOT}/rtl8159-autoload.sh"
-        cat > "${INIT_SCRIPT}" << EOFSCRIPT
-#!/bin/sh
-# RTL8159 Driver auto-load script
-# Loads driver from QPKG directory (bypasses read-only /lib/modules)
-
-# Unload old module if loaded
-rmmod r8152 2>/dev/null || true
-
-# Load driver from QPKG directory
-insmod ${QPKG_ROOT}/${DRIVER_FILE} 2>/dev/null || true
-EOFSCRIPT
-        chmod +x "${INIT_SCRIPT}"
-        log "Created auto-load script with forced reload: ${INIT_SCRIPT}"
-        log "Note: Driver will auto-load via QPKG service on boot"
+        log "Package is disabled; validated driver was installed without changing the active module."
     fi
-
-    log "=== Installation completed successfully ==="
-    echo ""
-    echo "=========================================="
-    echo "RTL8159 Driver installed!"
-    echo "=========================================="
-    echo "Features enabled:"
-    echo "  - S5 Wake-on-LAN support"
-    echo "  - Auto-load on boot"
-    echo "Log: ${LOG_FILE}"
-    echo ""
-    if lsmod | grep -q "^r8152 "; then
-        echo "Status: Driver loaded successfully"
-        echo "Please reconnect your USB Ethernet adapter"
-    else
-        echo "Status: Driver installed but not loaded"
-        echo "Please run: modprobe r8152"
-        echo "Or check: ${LOG_FILE}"
-    fi
-    echo "=========================================="
 }
 
-######################################################################
-# Define any package specific operations that shall be performed when
-# the package is removed.
-######################################################################
+# QDK inlines these snippets into .uninstall.sh. Keep the pre-remove guard
+# self-contained: functions from this file do not exist in the generated script.
 PKG_PRE_REMOVE="{
-    log \"=== Pre-removal started ===\"
-
-    # Unload driver if loaded
-    if lsmod | grep -q \"^r8152 \"; then
-        log \"Unloading r8152 driver...\"
-        rmmod r8152 2>/dev/null || modprobe -r r8152 2>/dev/null || true
-        log \"Driver unloaded\"
+    if [ ! -x \"${SYS_QPKG_DIR}/${SERVICE_FILE}\" ]; then
+        echo \"ERROR: QPKG service script is missing; refusing unsafe removal.\" >&2
+        exit 1
     fi
+    RTL8159_QPKG_ROOT=\"${SYS_QPKG_DIR}\" RTL8159_SKIP_ENABLE_CHECK=TRUE \"${SYS_QPKG_DIR}/${SERVICE_FILE}\" remove || {
+        echo \"ERROR: Stock r8152 module could not be restored; QPKG files were kept.\" >&2
+        exit 1
+    }
 }"
 
-PKG_MAIN_REMOVE="{
-    log \"=== Main removal started ===\"
-
-    # Remove driver file
-    if [ -f \"${MODULE_DIR}/${DRIVER_FILE}\" ]; then
-        rm -f \"${MODULE_DIR}/${DRIVER_FILE}\"
-        log \"Removed driver: ${MODULE_DIR}/${DRIVER_FILE}\"
-    fi
-
-    # Restore backup if exists (most recent backup)
-    BACKUP=\$(ls -t \"${MODULE_DIR}/${DRIVER_FILE}.backup.\"* 2>/dev/null | head -1)
-    if [ -n \"\$BACKUP\" ] && [ -f \"\$BACKUP\" ]; then
-        mv \"\$BACKUP\" \"${MODULE_DIR}/${DRIVER_FILE}\"
-        log \"Restored backup driver: \$BACKUP\"
-    fi
-
-    # Update module dependencies
-    log \"Updating module dependencies...\"
-    depmod -a 2>/dev/null || true
-    log \"Module dependencies updated\"
-}"
-
-PKG_POST_REMOVE="{
-    log \"=== Post-removal started ===\"
-
-    # Remove auto-load configuration from various locations
-    RC_LOCAL=\"/etc/rc.local\"
-    AUTORUN_CONF=\"/etc/config/autorun.conf\"
-
-    # Remove from rc.local if it exists
-    if [ -f \"${RC_LOCAL}\" ] && [ -w \"${RC_LOCAL}\" ]; then
-        if grep -q \"RTL8159 Driver auto-load\" \"${RC_LOCAL}\"; then
-            sed -i '/# RTL8159 Driver auto-load/d' \"${RC_LOCAL}\"
-            sed -i '/modprobe r8152.*RTL8159/d' \"${RC_LOCAL}\"
-            log \"Removed auto-load from ${RC_LOCAL}\"
-        fi
-    fi
-
-    # Remove from autorun.conf if it exists
-    if [ -f \"${AUTORUN_CONF}\" ] && [ -w \"${AUTORUN_CONF}\" ]; then
-        if grep -q \"RTL8159 Driver\" \"${AUTORUN_CONF}\"; then
-            sed -i '/modprobe r8152.*RTL8159/d' \"${AUTORUN_CONF}\"
-            log \"Removed auto-load from ${AUTORUN_CONF}\"
-        fi
-    fi
-
-    # Remove our init script if it exists
-    if [ -f \"${QPKG_ROOT}/rtl8159-autoload.sh\" ]; then
-        rm -f \"${QPKG_ROOT}/rtl8159-autoload.sh\"
-        log \"Removed auto-load script\"
-    fi
-
-    # Try to reload original driver if available
-    if [ -f \"${MODULE_DIR}/${DRIVER_FILE}\" ]; then
-        log \"Reloading original driver...\"
-        modprobe r8152 2>/dev/null || true
-        if lsmod | grep -q \"^r8152 \"; then
-            log \"Original driver reloaded successfully\"
-        fi
-    fi
-
-    log \"=== Removal completed ===\"
-    echo \"RTL8159 Driver has been removed\"
-}"
+PKG_MAIN_REMOVE=""
+PKG_POST_REMOVE=""

@@ -1,0 +1,42 @@
+name: Test QPKG Safety
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  safety-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run service behavior tests
+        run: sh tests/test_rtl8159_service.sh
+
+      - name: Run QDK lifecycle tests
+        run: sh tests/test_package_routines.sh
+
+      - name: Check shell syntax
+        run: |
+          find . -path ./.git -prune -o -path ./output -prune -o -type f -name '*.sh' -exec sh -n {} \;
+          sh -n qpkg/RTL8159_Driver/package_routines
+
+      - name: Check project configuration syntax
+        run: |
+          python3 - <<'PY'
+          import ast
+          import json
+          import pathlib
+          import tomllib
+
+          json.loads(pathlib.Path(".claude/settings.local.json").read_text())
+          tomllib.loads(pathlib.Path(".codex/config.toml").read_text())
+          ast.parse(pathlib.Path(".codex/rules/default.rules").read_text())
+          PY

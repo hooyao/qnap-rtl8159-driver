@@ -2,10 +2,10 @@
 
 ## Project Status: ✅ COMPLETE AND WORKING
 
-**Last Updated**: November 18, 2025
-**Status**: Production Ready
+**Last Updated**: August 17, 2026
+**Status**: Stable 5.10 path production-ready; Linux 6.6.32 experiment awaiting QNAP hardware validation
 **Driver Version**: v2.21.4 with RTL8159 support
-**Target**: QNAP x86_64 systems running QuTS hero h5.2.x (kernel 5.10.60-qnap)
+**Stable Target**: QNAP x86_64 systems running QuTS hero h5.2.x (kernel 5.10.60-qnap)
 
 ---
 
@@ -20,9 +20,29 @@ export DRIVER_VERSION=2.21.4
 ./build.sh all
 
 # 3. Output
-ls output/RTL8159_Driver_*.qpkg  # 126KB installer
-ls output/driver/r8152.ko        # 391KB driver
+ls output/RTL8159_Driver_*.qpkg  # ~134KB installer
+ls output/driver/r8152.ko        # ~409KB driver
 ```
+
+---
+
+## Linux 6.6.32 Experimental Status
+
+An isolated experiment compiled the unmodified Realtek v2.21.4 source at commit
+`67fc21c` against a fully built upstream Linux 6.6.32 kernel using GCC 13,
+`LOCALVERSION=-qnap`, `CONFIG_NR_CPUS=32`, and `CONFIG_PINCTRL=y`.
+
+The resulting module has `vermagic=6.6.32-qnap SMP preempt mod_unload`, native
+RTL8159 aliases, and does not include `RTL8152_S5_WOL`. It was packaged under
+the separate QPKG name `RTL8159_6_6_Exp`.
+
+This proves upstream source compatibility only. It does **not** prove QNAP ABI
+compatibility because the build used upstream `Module.symvers`, not QNAP's
+exact kernel tree. Do not describe Linux 6 support as complete until the
+experimental package passes real QNAP load, traffic, reboot, and rollback tests.
+
+See `docs/linux-6.6.32-experimental.md` for the evidence, limitations, hashes,
+and hardware validation procedure.
 
 ---
 
@@ -53,35 +73,40 @@ gpl_source:
 **Problem**: System loads old module instead of new one from QPKG
 
 **Root Cause**:
-- `/lib/modules` is READ-ONLY on QNAP systems
-- Trying to copy driver there fails silently
-- After reboot, old driver loads from read-only filesystem
+- `/lib/modules` is often read-only on QNAP systems
+- The package must not depend on replacing the stock module there
+- Boot loading must select and verify the QPKG copy explicitly
 
-**Solution** (implemented in `package_routines`):
+**Solution** (implemented by `package_routines` and the QPKG service):
 ```bash
 # Keep driver in QPKG directory (on writable data volume)
 DRIVER_PATH="${QPKG_ROOT}/${DRIVER_FILE}"
 
-# Unload old module
-rmmod r8152
+# Refuse a kernel mismatch before unloading anything
+MODULE_KERNEL=$(strings "${DRIVER_PATH}" | sed -n 's/^vermagic=\([^ ]*\).*/\1/p')
+[ "${MODULE_KERNEL}" = "$(uname -r)" ] || exit 1
 
-# Load from QPKG directory (bypasses /lib/modules entirely)
-insmod ${DRIVER_PATH}
+# Load from the QPKG directory; restore stock on failure
+rmmod r8152
+insmod "${DRIVER_PATH}" || { modprobe r8152; exit 1; }
 
 # Verify using srcversion (NOT size!)
 LOADED_SRC=$(cat /sys/module/r8152/srcversion)
-FILE_SRC=$(strings ${DRIVER_PATH} | grep "^srcversion=" | cut -d= -f2)
-if [ "$LOADED_SRC" = "$FILE_SRC" ]; then
-    # Correct module loaded
-fi
+FILE_SRC=$(strings "${DRIVER_PATH}" | grep "^srcversion=" | cut -d= -f2)
+[ "$LOADED_SRC" = "$FILE_SRC" ] || {
+    rmmod r8152
+    modprobe r8152
+    exit 1
+}
 ```
 
 **Why this works**:
 - Driver loads from persistent data volume
-- Uses `insmod` with absolute path
-- Verifies using srcversion (unique identifier), not size
+- Validates vermagic before disrupting the active interface
+- Verifies srcversion after `insmod` and automatically restores stock on failure
+- Uses the registered QPKG service at boot; no new `rc.local` entry is required
 
-**IMPORTANT**: Runtime module size in `/proc/modules` (~294KB) is DIFFERENT from file size (~391KB). This is normal - kernel strips debug symbols. Use `srcversion` to verify!
+**IMPORTANT**: Runtime module size in `/proc/modules` (~294KB) is DIFFERENT from file size (~409KB). This is normal - kernel strips debug symbols. Use `srcversion` to verify!
 
 ### 3. Build System Architecture
 
@@ -102,19 +127,21 @@ build.sh all          # Orchestrator
    └─ build_qpkg.sh   # Uses QDK to create QPKG
 ```
 
-### 4. Driver Patching (RTL8157/8159 Support)
+### 4. Driver Compatibility Patching
 
 **Location**: `build_driver.sh:patch_driver()`
 
-**Adds device IDs** to USB device table:
-```bash
-# Find RTL8156 entry, inject RTL8157 and RTL8159 after it
-sed -i '/USB_DEVICE(VENDOR_ID_REALTEK, 0x8156)/a\
-\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x8157, ...) },\
-\t{ USB_DEVICE_AND_INTERFACE_INFO(VENDOR_ID_REALTEK, 0x815a, ...) },' r8152.c
-```
+The stable 5.10 path:
 
-**Result**: Driver recognizes USB devices `0bda:8157` (RTL8157) and `0bda:815a` (RTL8159)
+- rewrites `strscpy` to `strlcpy`;
+- conditionally injects RTL8157/RTL8159 IDs only when `0x815a` is missing;
+- enables `RTL8152_S5_WOL` in the Realtek Makefile.
+
+Realtek v2.21.4 already contains native RTL8157/RTL8159 entries, so device-ID
+injection is skipped for the current version.
+
+The Linux 6.6.32 experiment intentionally did not use this patch function:
+`r8152.c` remained unchanged and `RTL8152_S5_WOL` remained disabled.
 
 ---
 
@@ -210,7 +237,7 @@ target_model: "TS-X65U"  # Kernel config directory
 ### Issue: How to Verify Correct Module is Loaded
 
 **IMPORTANT**: `/proc/modules` shows runtime memory size, NOT file size!
-- File size: ~391KB (399848 bytes)
+- File size: ~409KB (418280 bytes)
 - Runtime size: ~288KB (294912 bytes) - this is NORMAL
 
 **Correct way to verify**:
@@ -290,7 +317,7 @@ dmesg | tail -30 | grep r8152
 2. If USB not recognized → Check dmesg for errors
 3. If no interface created → Check cable/port
 
-**IMPORTANT**: Don't check module size! Runtime size (~294KB) differs from file size (~391KB).
+**IMPORTANT**: Don't check module size! Runtime size (~294KB) differs from file size (~409KB).
 
 ### Issue: Build Fails "GPL source not found"
 
@@ -396,8 +423,9 @@ COPY GPL_QTS/kernel_cfg/TS-X73/linux-5.10-x86_64.config /build/kernel/
 ### 4. Installation Cache Fix
 - ✅ Auto-clears module cache
 - ✅ Force-loads with `insmod`
-- ✅ Verifies module size after load
-- ✅ Warns if wrong module detected
+- ✅ Validates kernel/vermagic before unloading
+- ✅ Verifies srcversion after load
+- ✅ Restores the stock module on failure
 
 ### 5. Clear Build Messages
 - ❌ OLD: "No kernel source provided - will download generic kernel"
@@ -411,11 +439,13 @@ COPY GPL_QTS/kernel_cfg/TS-X73/linux-5.10-x86_64.config /build/kernel/
 - [ ] `versions.yml` has correct GPL URLs
 - [ ] GPL source exists: `ls GPL_QTS/src/linux-5.10/`
 - [ ] Docker running: `docker --version`
+- [ ] Service safety tests pass: `bash tests/test_rtl8159_service.sh`
+- [ ] QDK lifecycle tests pass: `bash tests/test_package_routines.sh`
 
 ### Post-Build
-- [ ] QPKG created: `ls output/*.qpkg` (~126KB)
-- [ ] Driver compiled: `ls output/driver/r8152.ko` (~391KB)
-- [ ] Driver version: `strings output/driver/r8152.ko | grep "v2.20"`
+- [ ] QPKG created: `ls output/*.qpkg` (~134KB)
+- [ ] Driver compiled: `ls output/driver/r8152.ko` (~409KB)
+- [ ] Driver version: `strings output/driver/r8152.ko | grep "v2.21.4"`
 - [ ] Driver srcversion: `strings output/driver/r8152.ko | grep "^srcversion="`
 - [ ] Device IDs present: `strings output/driver/r8152.ko | grep 815a`
 
@@ -445,11 +475,14 @@ COPY GPL_QTS/kernel_cfg/TS-X73/linux-5.10-x86_64.config /build/kernel/
 
 ### Installation
 - `qpkg/RTL8159_Driver/package_routines` - Install/remove logic
+- `qpkg/RTL8159_Driver/shared/RTL8159_Driver.sh` - Validated load and rollback service
 - `qpkg/RTL8159_Driver/qpkg.cfg` - Package metadata
 
 ### Documentation
 - `README.md` - User guide
+- `docs/linux-6.6.32-experimental.md` - Linux 6.6 experiment and hardware test procedure
 - `.claude/CLAUDE.md` - This file (developer guide)
+- `AGENTS.md` - Codex counterpart of this developer guide
 - `gpl_source/README.md` - GPL source instructions
 
 ---
@@ -466,7 +499,7 @@ COPY GPL_QTS/kernel_cfg/TS-X73/linux-5.10-x86_64.config /build/kernel/
 2. **Module Cache is a Hidden Problem**
    - System caches module metadata
    - New file installed but old module loads
-   - Must clear cache and use `insmod` with absolute path
+   - The QPKG service uses an absolute `insmod` path, verifies it, and rolls back safely
 
 3. **YAML Configuration is Superior**
    - Single source of truth
@@ -493,26 +526,28 @@ Don't waste time trying to:
 
 ### Success Metrics
 
-- ✅ Driver compiles: 391KB r8152.ko file
+- ✅ Driver compiles: ~409KB r8152.ko file
 - ✅ Module loads: `lsmod | grep r8152`
 - ✅ Correct module: srcversion matches QPKG driver file
 - ✅ Version correct: v2.21.4 (2025/10/28)
 - ✅ Device detects: USB device → ethX interface
 - ✅ Network works: Can ping/transfer data
-- ✅ Survives reboot: Auto-loads on boot
+- ✅ Survives reboot: QPKG service validates and auto-loads on boot
 - ⚠️ Runtime size: ~294KB in /proc/modules (NORMAL, don't check this!)
 
 ---
 
 ## Status Summary
 
-**Project**: ✅ Complete and Production Ready
-**Confidence**: High (tested on actual hardware)
+**Stable 5.10 Project**: ✅ Complete and Production Ready
+**Linux 6.6.32 Experiment**: Build and QPKG complete; QNAP hardware validation pending
+**Stable-path Confidence**: High (tested on actual hardware)
 **Reproducibility**: Excellent (Docker-based)
 **Maintainability**: Good (YAML config, clear docs)
 **User Experience**: Smooth (automatic install, cache fix)
 
-**Last verified**: November 18, 2025
+**Stable hardware last verified**: November 18, 2025
+**Linux 6.6.32 build experiment verified**: August 17, 2026 (hardware not yet tested)
 **Hardware**: QNAP TS-X65U / QuTS hero h5.2.7.3251
 **Device**: RTL8159 (0bda:815a) 10GbE USB adapter
 

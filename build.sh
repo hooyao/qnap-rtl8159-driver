@@ -25,10 +25,15 @@ fi
 
 # Parse YAML using grep and sed (simple approach, no external dependencies)
 DEFAULT_DRIVER_VERSION=$(grep '^driver_version:' versions.yml | sed 's/driver_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
-DEFAULT_KERNEL_VERSION=$(grep '^kernel_version:' versions.yml | sed 's/kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
+DEFAULT_KERNEL_VERSION=$(grep '^[[:space:]]*kernel_version:' versions.yml | head -1 | sed 's/^[[:space:]]*kernel_version:[[:space:]]*"\(.*\)"/\1/' | tr -d '"' | tr -d "'")
 
 if [ -z "${DEFAULT_DRIVER_VERSION}" ]; then
     echo "ERROR: could not read 'driver_version' from versions.yml"
+    exit 1
+fi
+
+if [ -z "${DEFAULT_KERNEL_VERSION}" ]; then
+    echo "ERROR: could not read 'gpl_source.kernel_version' from versions.yml"
     exit 1
 fi
 
@@ -36,6 +41,15 @@ fi
 DRIVER_VERSION="${DRIVER_VERSION:-${DEFAULT_DRIVER_VERSION}}"
 KERNEL_VERSION="${KERNEL_VERSION:-${DEFAULT_KERNEL_VERSION}}"
 QPKG_VERSION="${QPKG_VERSION:-${DRIVER_VERSION}}"
+
+# The current Dockerfile and QNAP GPL source layout are intentionally 5.10-only.
+# Refuse misleading overrides until a separate kernel build path is implemented.
+SUPPORTED_KERNEL_VERSION="5.10.60"
+if [ "${KERNEL_VERSION}" != "${SUPPORTED_KERNEL_VERSION}" ]; then
+    echo "ERROR: this build path supports kernel ${SUPPORTED_KERNEL_VERSION} only."
+    echo "Requested kernel: ${KERNEL_VERSION}"
+    exit 1
+fi
 
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
@@ -97,19 +111,20 @@ Commands:
   help             - Show this help message
 
 Optional:
-  kernel_source_path - Path to QNAP GPL kernel source tarball
-                       If not provided, will download generic kernel
+  kernel_source_path - Reserved for a future separate kernel build path.
+                       The current path always uses GPL_QTS/src/linux-5.10.
 
 Environment Variables:
   DRIVER_VERSION   - Realtek driver version to download (default: from versions.yml)
-  KERNEL_VERSION   - Target kernel version (default: from versions.yml)
+  KERNEL_VERSION   - Must be 5.10.60 for the current build path
   QPKG_VERSION     - QPKG package version (default: same as DRIVER_VERSION)
 
 Configuration:
   Default versions are defined in versions.yml:
     - driver_version: Realtek driver release tag
     - kernel_version: Target kernel version
-  Environment variables override these defaults.
+  DRIVER_VERSION and QPKG_VERSION may be overridden. Unsupported kernel
+  overrides fail before Docker is invoked.
 
 Examples:
   $0 all                                    # Full build (uses versions.yml)
