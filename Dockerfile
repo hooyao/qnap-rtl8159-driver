@@ -31,8 +31,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install QDK (QNAP Development Kit)
+ARG QDK_COMMIT=78c77b898fecba8f860b630177248b5fa3f5baaf
 RUN git clone https://github.com/qnap-dev/QDK.git /opt/QDK && \
     cd /opt/QDK && \
+    git checkout --detach "${QDK_COMMIT}" && \
     chmod +x InstallToUbuntu.sh && \
     yes | ./InstallToUbuntu.sh install
 

@@ -1,0 +1,8 @@
+# Project-scoped Codex counterpart to .claude/settings.local.json.
+# Codex only loads project configuration after the repository is trusted.
+# Claude Code's domain-scoped WebFetch entries have no separate Codex
+# project-rule primitive; direct retrieval remains governed by the host policy.
+web_search = "live"
+
+[tools]
+web_search = true

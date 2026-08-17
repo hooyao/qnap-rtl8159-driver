@@ -31,6 +31,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Run QPKG safety tests
+        run: |
+          sh tests/test_rtl8159_service.sh
+          sh tests/test_package_routines.sh
+
       - name: Load versions from versions.yml
         id: get_version
         run: |

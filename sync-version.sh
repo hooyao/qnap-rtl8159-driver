@@ -8,7 +8,7 @@
 #   (build.sh -> build_driver.sh / build_qpkg.sh), so the COMPILED driver, the
 #   PACKAGED QPKG version and the Web UI version always match versions.yml at build
 #   time. This script keeps the *committed* human-facing copies (package manifest
-#   default, web UI, README, developer guide) from drifting, so a version bump is a
+#   default, web UI, README, developer guides) from drifting, so a version bump is a
 #   single command instead of editing ~9 files by hand.
 #
 # Usage:
@@ -58,7 +58,7 @@ sed -i "s|\(<strong>Version:</strong>\)[^<]*<|\1 ${NEW}<|" qpkg/RTL8159_Driver/s
 #    OLD string (e.g. "2.20.1") is safe - it will not collide with the kernel (5.10.60)
 #    or QTS (5.2.3) versions. Skipped on a pure re-sync (OLD == NEW).
 if [ "${OLD}" != "${NEW}" ]; then
-    for f in README.md .claude/CLAUDE.md versions.yml; do
+    for f in README.md AGENTS.md .claude/CLAUDE.md .claude/settings.local.json .codex/rules/default.rules versions.yml; do
         [ -f "$f" ] && sed -i "s/${OLD_RE}/${NEW}/g" "$f"
     done
 fi
@@ -68,6 +68,7 @@ echo "Done. Files updated from versions.yml:"
 echo "  - versions.yml            (driver_version)"
 echo "  - qpkg/.../qpkg.cfg       (QPKG_VER)"
 echo "  - qpkg/.../web/index.html (Version label)"
-echo "  - README.md, .claude/CLAUDE.md (docs)"
+echo "  - README.md, AGENTS.md, .claude/CLAUDE.md (docs)"
+echo "  - .claude/settings.local.json, .codex/rules/default.rules (versioned command rules)"
 echo ""
 echo "Review with: git diff"

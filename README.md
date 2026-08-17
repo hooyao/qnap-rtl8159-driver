@@ -2,11 +2,13 @@
 
 [![Build and Release QPKG](https://github.com/hooyao/qnap-rtl8159-driver/actions/workflows/release.yml/badge.svg)](https://github.com/hooyao/qnap-rtl8159-driver/actions/workflows/release.yml)
 
-**Status**: ✅ **COMPLETE AND WORKING** - Production Ready
+**Status**: Stable QNAP 5.10 path is production-ready; Linux 6.6.32 is an unverified hardware experiment
 
-Automated build system for compiling and packaging the Realtek RTL8159 10Gbps USB Ethernet driver (r8152.ko) as a QPKG for QNAP NAS systems.
+Automated build system for compiling and packaging the Realtek RTL8159 10Gbps
+USB Ethernet driver (`r8152.ko`) as a QPKG for QNAP NAS systems. The supported
+release target is currently `5.10.60-qnap`.
 
-## 🎉 Success Summary
+## 🎉 Stable 5.10 Success Summary
 
 - **Driver Version**: v2.21.4 (2025/10/28) - Latest version with RTL8159 support
 - **Tested On**: QNAP TS-X65U running QuTS hero h5.2.7.3251 (kernel 5.10.60-qnap)
@@ -21,6 +23,32 @@ Successfully built a working kernel module by using **QNAP's actual GPL kernel s
 
 ---
 
+## Linux 6.6.32 Experimental Build
+
+On August 17, 2026, unmodified Realtek v2.21.4 source at commit `67fc21c`
+compiled successfully against a fully built upstream Linux 6.6.32 tree with
+GCC 13, `LOCALVERSION=-qnap`, `CONFIG_NR_CPUS=32`, and
+`CONFIG_PINCTRL=y`.
+
+The resulting module reports:
+
+```text
+version:    v2.21.4 (2025/10/28)
+srcversion: 1A03B3E3C8B337AB1CB6DFA
+vermagic:   6.6.32-qnap SMP preempt mod_unload
+```
+
+It contains native RTL8159 aliases and keeps `RTL8152_S5_WOL` disabled. A
+separate local QPKG was produced under the package name
+`RTL8159_6_6_Exp`, so it does not overwrite the stable package.
+
+This proves upstream source compatibility, **not QNAP ABI compatibility**. The
+experiment used upstream `Module.symvers`; it has not been loaded on QNAP
+hardware. See [the complete experiment report](docs/linux-6.6.32-experimental.md)
+before testing it on a non-production NAS.
+
+---
+
 ## Features
 
 - **Latest Driver**: v2.21.4 with RTL8157/8159 support (10Gbps capable)
@@ -28,8 +56,8 @@ Successfully built a working kernel module by using **QNAP's actual GPL kernel s
 - **Official QDK**: Uses QNAP's official QDK (QPKG Development Kit) for packaging
 - **Multi-Device Support**: RTL8152/8153/8155/8156/8157/8159 USB Ethernet adapters
 - **QuTS hero Compatible**: Works on both QTS and QuTS hero systems
-- **Auto-Load**: Driver loads automatically at boot after installation
-- **S5 Wake-on-LAN**: Enabled for wake-on-LAN support
+- **Safe Auto-Load**: QPKG service validates kernel compatibility before loading and restores the stock driver on failure
+- **S5 Wake-on-LAN**: Enabled by the stable 5.10 build path
 
 ---
 
@@ -56,7 +84,7 @@ Plus many OEM variants (Microsoft, Lenovo, ASUS, Dell, HP, ThinkPad, etc.)
 - Internet connection (for downloading kernel/driver sources)
 - **QNAP GPL source package** (CRITICAL - see Prerequisites)
 
-### Target QNAP NAS
+### Stable Target QNAP NAS
 - **Architecture**: x86_64
 - **OS**: QTS 4.2+ or QuTS hero h5.2+
 - **Kernel**: 5.10.60-qnap
@@ -148,8 +176,8 @@ That's it! The build system will:
 - Subsequent builds: ~1-2 minutes
 
 **Final output**:
-- `output/RTL8159_Driver_2.21.4_x86_64.qpkg` (126KB) - Ready to install!
-- `output/driver/r8152.ko` (391KB) - Compiled driver
+- `output/RTL8159_Driver_2.21.4_x86_64.qpkg` (~134KB) - Ready to install!
+- `output/driver/r8152.ko` (~409KB) - Compiled driver
 
 ### 2. Install on QNAP
 
@@ -175,14 +203,15 @@ sudo sh RTL8159_Driver_2.21.4_x86_64.qpkg
 
 ### 3. Verify Installation (Automatic)
 
-✅ **Good News**: The installer now **automatically** handles module cache clearing and force-loads the correct driver using `insmod`. The driver should work immediately after installation!
+✅ **Good News**: The installer validates the packaged module before it touches the running driver, then loads and verifies it automatically.
 
 **What the installer does automatically:**
-1. Keeps driver in QPKG directory (bypasses read-only `/lib/modules`)
-2. Unloads old driver from memory
-3. Force-loads the new driver with `insmod` from QPKG directory
-4. Verifies the correct module using srcversion (NOT size!)
-5. Sets up auto-load on boot
+1. Keeps the driver in the QPKG directory and leaves `/lib/modules` untouched
+2. Requires x86_64 and an exact match between `uname -r` and module vermagic
+3. Only after validation, unloads the active driver and loads the QPKG module with `insmod`
+4. Verifies the loaded module using srcversion (NOT size!)
+5. Restores the stock `r8152` with `modprobe` if loading or verification fails
+6. Uses `QPKG_SERVICE_PROGRAM` for boot loading; it does not add new `rc.local` or `autorun.conf` entries
 
 ### 4. Manual Verification & Troubleshooting
 
@@ -190,7 +219,7 @@ If you want to verify or experience issues:
 
 ```bash
 # IMPORTANT: Check module using srcversion (NOT size!)
-# Runtime size in /proc/modules (~294KB) differs from file size (~391KB)
+# Runtime size in /proc/modules (~294KB) differs from file size (~409KB)
 
 # 1. Check if module is loaded
 lsmod | grep r8152
@@ -250,10 +279,19 @@ quts_rtl/
 ├── output/                # Build artifacts
 │   ├── RTL8159_Driver_*.qpkg  # Final package
 │   └── driver/r8152.ko   # Compiled driver
+├── tests/
+│   ├── test_rtl8159_service.sh # Module safety/rollback mock tests
+│   └── test_package_routines.sh # QDK lifecycle/removal guard tests
+├── docs/
+│   └── linux-6.6.32-experimental.md # Experiment evidence and hardware procedure
+├── AGENTS.md             # Codex project development guide
+├── .codex/               # Codex project configuration
+│   ├── config.toml       # Live web-search capability
+│   └── rules/
+│       └── default.rules # Project command allow rules
 ├── .claude/              # Claude Code memory
-│   └── CLAUDE.md        # Complete development guide
-├── SUCCESS_SUMMARY.md   # Success documentation
-├── FINAL_SUMMARY.txt    # Project completion report
+│   ├── CLAUDE.md         # Complete development guide
+│   └── settings.local.json # Claude Code project permissions
 └── README.md            # This file
 ```
 
@@ -268,7 +306,8 @@ quts_rtl/
 
 2. **build_driver.sh**:
    - Downloads Realtek driver source (v2.21.4)
-   - **Patches** to add RTL8157/8159 device IDs
+   - Applies the stable 5.10 compatibility rewrite
+   - Injects RTL8157/8159 IDs only when they are missing
    - Compiles against QNAP's kernel source
    - Enables S5 Wake-on-LAN support
 
@@ -349,27 +388,28 @@ sed -i '/USB_DEVICE(VENDOR_ID_REALTEK, 0x815a)/a\
 ### What the Installer Does
 
 **Pre-Install:**
-- Backs up existing r8152.ko driver
-- Unloads old driver from memory
-- Creates necessary directories
+- Leaves the active and stock drivers untouched
+- Defers all module changes until the packaged driver can be validated
 
 **Install:**
-- Copies new r8152.ko to `/lib/modules/5.10.60-qnap/`
-- Sets correct permissions (644)
-- Updates kernel module dependencies (`depmod`)
+- Installs `r8152.ko` in the QPKG directory
+- Verifies the target architecture is x86_64
+- Never copies, removes, or replaces the stock file under `/lib/modules`
 
 **Post-Install:**
-- Loads new driver into kernel
-- Verifies driver loaded successfully
+- Validates module vermagic against the running kernel before unloading anything
+- Loads the QPKG driver and verifies its srcversion
+- Automatically restores the stock driver if loading or verification fails
 - Creates installation log
-- Sets up auto-load at boot
+- Removes legacy auto-load entries and relies on the registered QPKG service
 
 ### Installed Files
 
-- **Driver**: `/lib/modules/5.10.60-qnap/r8152.ko` (391KB)
+- **Driver**: `/share/CACHEDEV1_DATA/.qpkg/RTL8159_Driver/r8152.ko`
 - **QPKG dir**: `/share/CACHEDEV1_DATA/.qpkg/RTL8159_Driver/`
 - **Install log**: `/share/CACHEDEV1_DATA/.qpkg/RTL8159_Driver/install.log`
-- **Service script**: `/share/CACHEDEV1_DATA/.qpkg/RTL8159_Driver/shared/RTL8159_Driver.sh`
+- **Service script**: `/share/CACHEDEV1_DATA/.qpkg/RTL8159_Driver/RTL8159_Driver.sh`
+- **Stock driver**: Remains at its existing `/lib/modules/$(uname -r)/` location
 
 ---
 
@@ -394,11 +434,14 @@ strings "$QPKG_PATH/r8152.ko" | grep "^srcversion="
 **Solution**:
 ```bash
 QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
-sudo rmmod r8152
-sudo insmod "$QPKG_PATH/r8152.ko"
+sudo "$QPKG_PATH/RTL8159_Driver.sh" restart
+sudo "$QPKG_PATH/RTL8159_Driver.sh" status
 ```
 
-**Note**: Runtime size in `/proc/modules` (~294KB) is DIFFERENT from file size (~391KB). This is normal!
+The service refuses a vermagic mismatch before unloading the current module and
+restores the stock module if the QPKG load cannot be verified.
+
+**Note**: Runtime size in `/proc/modules` (~294KB) is DIFFERENT from file size (~409KB). This is normal!
 
 ### "version magic ... should be ..." Error
 
@@ -406,7 +449,8 @@ sudo insmod "$QPKG_PATH/r8152.ko"
 
 **Check**:
 ```bash
-strings /lib/modules/*/r8152.ko | grep vermagic
+QPKG_PATH=$(getcfg "RTL8159_Driver" Install_Path -f /etc/config/qpkg.conf)
+strings "$QPKG_PATH/r8152.ko" | grep "^vermagic="
 # Should show: 5.10.60-qnap SMP mod_unload (no "modversions")
 ```
 
@@ -521,10 +565,10 @@ RTL8153: 0bda:8153  RTL8156: 0bda:8156  RTL8159: 0bda:815a ✨
 ```
 
 **What happens:**
-- Driver unloaded from memory
-- Driver file removed
-- Original backup restored (if any)
-- Module dependencies updated
+- The service unloads the driver only when its srcversion matches the QPKG file
+- The stock `r8152` module is restored with `modprobe`
+- No file under `/lib/modules` is deleted or replaced
+- Legacy `rc.local` / `autorun.conf` entries from older releases are removed
 - QPKG entry removed from config
 
 ---
@@ -533,9 +577,10 @@ RTL8153: 0bda:8153  RTL8156: 0bda:8156  RTL8159: 0bda:815a ✨
 
 1. **Requires QNAP GPL Source**: Cannot build without complete kernel source
 2. **Model-Specific**: May need different config for different QNAP models
-3. **Kernel Version**: Locked to 5.10.60-qnap
+3. **Stable Kernel Version**: Locked to 5.10.60-qnap
 4. **Architecture**: x86_64 only (ARM not supported yet)
 5. **Firmware Version**: Tested on QuTS hero h5.2.7, may need adjustment for other versions
+6. **Linux 6.6 Experiment**: Compiles against upstream 6.6.32 but is not yet verified against QNAP's exact ABI or hardware
 
 ---
 
@@ -546,6 +591,7 @@ RTL8153: 0bda:8153  RTL8156: 0bda:8156  RTL8159: 0bda:815a ✨
 - [QNAP QDK](https://github.com/qnap-dev/QDK) - Official packaging tools
 - [QDK Guide](https://cheng-yuan-hong.gitbook.io/qdk-quick-start-guide/) - QDK documentation
 - [Linux Kernel](https://kernel.org/) - Kernel archives
+- [Linux 6.6.32 experiment report](docs/linux-6.6.32-experimental.md) - Build evidence, limitations, and test procedure
 
 ---
 
@@ -569,6 +615,7 @@ RTL8153: 0bda:8153  RTL8156: 0bda:8156  RTL8159: 0bda:815a ✨
 Contributions welcome! Areas for improvement:
 - Support for ARM architecture QNAP models
 - Support for different kernel versions
+- QNAP 6.6 kernel config, generated headers, Module.symvers, and hardware validation
 - Additional driver version testing
 - Documentation improvements
 - CI/CD automation
@@ -590,9 +637,9 @@ This is an unofficial build. Test thoroughly before using in production. Always 
 ## Support
 
 **Documentation**:
+- `AGENTS.md` - Codex developer guide
 - `.claude/CLAUDE.md` - Complete developer guide
-- `SUCCESS_SUMMARY.md` - Detailed success path
-- `FINAL_SUMMARY.txt` - Project metrics and troubleshooting
+- `docs/linux-6.6.32-experimental.md` - Linux 6.6 build experiment and hardware validation procedure
 
 **For Issues**:
 1. Check installation log: `cat /share/.qpkg/RTL8159_Driver/install.log`
@@ -603,10 +650,10 @@ This is an unofficial build. Test thoroughly before using in production. Always 
 
 ---
 
-**Project Status**: ✅ **COMPLETE AND PRODUCTION READY**
-**Last Updated**: November 18, 2025
+**Project Status**: Stable 5.10 path production-ready; Linux 6.6.32 experimental
+**Last Updated**: August 17, 2026
 **Tested By**: Community contributors
 **Maintained By**: Project team
 
-**Author**: Built with Claude
+**Author**: Built with Claude and Codex
 **Contact**: hooyao@gmail.com
